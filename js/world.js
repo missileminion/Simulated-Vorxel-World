@@ -9,6 +9,8 @@ import { stepWater, stepSources, dailyMoistureSpread, buildWarmMap, initialGroun
 import { seedInitialVegetation, dailyVegetation, hourlyFire, tryLightning, TREE } from './vegetation.js';
 import { dailyFish, seedInitialFish } from './fish.js';
 import { EventLog } from './events.js';
+import { seedAnimals, tickAnimals, dailyAnimals, approxDayAnimals } from './animals.js';
+import { SPECIES_KEYS } from './species.js';
 
 export const FLOAT_FIELDS = ['terrain', 'water', 'sed', 'moist', 'snow', 'grass', 'reed', 'treeSize',
   'treeHealth', 'litter', 'fert', 'fish', 'burn', 'fire', 'flow', 'fx', 'fy', 'deposit'];
@@ -39,6 +41,10 @@ export class World {
     this.fishDied = 0;
     this.monitor = { drought: false, flood: 0, ice: false, snow: false, avgDrain: 0, fire: null, trees: 0, fishTotal: 0 };
     this.stats = {};
+    this.animals = [];
+    this.nextAnimalId = 1;
+    this.birthsToday = {};
+    this.deathsToday = {};
     this.revision = 0;              // bumps when something visible changed a lot
   }
 
@@ -49,6 +55,8 @@ export class World {
     w.warmup();
     seedInitialVegetation(w);
     seedInitialFish(w);
+    w.updateWetList();
+    seedAnimals(w);
     w.computeStats();
     w.monitor.trees = w.stats.trees;
     w.monitor.fishTotal = w.stats.fish;
@@ -91,6 +99,7 @@ export class World {
     const cal = this.climate.update(this.minute, this.rng);
     stepSources(this);
     stepWater(this);
+    tickAnimals(this);
     this.minute++;
     const m = this.minute % MIN_PER_DAY;
     if (m % 60 === 0) this.hourly();
@@ -98,7 +107,14 @@ export class World {
     return cal;
   }
 
+  updateWetList() {
+    const list = [];
+    for (let i = 0; i < this.water.length; i++) if (this.water[i] > 0.12) list.push(i);
+    this.wetList = list;
+  }
+
   hourly() {
+    this.updateWetList();
     const lit = tryLightning(this, this.rng);
     if (lit >= 0 && !this.monitor.fire) {
       this.monitor.fire = { start: this.minute, where: placeName(lit), cells: 0 };
@@ -125,6 +141,7 @@ export class World {
     dailyMoistureSpread(this);
     dailyVegetation(this, cal);
     dailyFish(this, cal);
+    if (!this.approximating) dailyAnimals(this, cal);
     this.computeStats();
     this.checkEvents(cal);
     this.drainedToday = 0; this.inflowToday = 0; this.fishDied = 0;
@@ -161,7 +178,10 @@ export class World {
       this.hourly();
     }
     this.minute = startMin + MIN_PER_DAY;
+    this.approximating = true;
     this.daily();
+    this.approximating = false;
+    approxDayAnimals(this, this.cal);
   }
 
   computeStats() {
@@ -188,6 +208,7 @@ export class World {
       grass: grass / n, moist: moist / n, fish, snowCells: snow, iceCells: ice,
       drained: this.drainedToday, inflow: this.inflowToday, groundwater: this.groundwater,
       maxErode, maxDep, burning: this.burning.length,
+      animals: Object.fromEntries(SPECIES_KEYS.map(sp => [sp, this.animals.filter(a => a.sp === sp).length])),
     };
   }
 

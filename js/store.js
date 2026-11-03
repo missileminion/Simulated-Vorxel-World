@@ -2,6 +2,7 @@
 
 import { World, FLOAT_FIELDS, BYTE_FIELDS } from './world.js';
 import { SAVE_KEY, SAVE_VERSION } from './config.js';
+import { serializeAnimals, loadAnimals, seedAnimals } from './animals.js';
 
 const SKIP = new Set(['fx', 'fy']); // rebuilt within seconds, not worth the space
 
@@ -38,6 +39,8 @@ export function save(world, settings) {
     climate: world.climate.toJSON(),
     log: world.log.toJSON(),
     terrainBase: f32(world.terrainBase),
+    animals: serializeAnimals(world),
+    nextAnimalId: world.nextAnimalId,
     fields,
   };
   try {
@@ -76,7 +79,10 @@ export function load() {
     w.monitor = { ...w.monitor, ...d.monitor };
     w.climate.load(d.climate);
     w.log.load(d.log);
+    if (d.animals) { loadAnimals(w, d.animals); w.nextAnimalId = d.nextAnimalId || 1; }
+    else seedAnimals(w); // saves from before animals existed
     w.prepare();
+    w.updateWetList();
     w.computeStats();
     return { world: w, savedAt: d.savedAt, settings: d.settings || {} };
   } catch {

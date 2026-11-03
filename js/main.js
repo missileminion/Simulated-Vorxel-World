@@ -9,6 +9,8 @@ import { calendar } from './climate.js';
 import { placeName, MAT_NAMES } from './terrain.js';
 import { TREE_NAMES } from './vegetation.js';
 import { cellTemp } from './hydrology.js';
+import { SPECIES, SPECIES_KEYS, ACTIONS, A } from './species.js';
+import { ageYears } from './animals.js';
 
 const $ = id => document.getElementById(id);
 const params = new URLSearchParams(location.search);
@@ -101,6 +103,10 @@ function updateHud() {
   $('date').textContent = `${SEASON_NAMES[c.season]} · day ${c.dayOfSeason + 1} · year ${c.year + 1}`;
   $('weather').textContent = `${cl.describe()} · ${Math.round(cl.temp)}°C`;
   $('speed').textContent = `${SPEEDS[settings.speed]}×`;
+  $('pop').textContent = SPECIES_KEYS.map(sp => {
+    const n = world.animals.filter(a => a.sp === sp).length;
+    return `${n} ${n === 1 ? SPECIES[sp].label : SPECIES[sp].plural}`;
+  }).join(' · ');
 }
 
 function renderLog() {
@@ -136,10 +142,97 @@ function renderHistory() {
 // ---------- inspector ----------
 
 let inspected = -1;
+let watched = -1;
+
+function doing(a) {
+  const S = SPECIES[a.sp];
+  switch (a.action) {
+    case A.EAT:
+      if (a.prey >= 0) return a.sp === 'fox' ? 'chasing prey' : 'hunting';
+      if (a.pose === 'dive') return 'diving for fish';
+      if (a.pose === 'stalk') return 'stalking the shallows';
+      if (a.pose === 'pounce') return 'pouncing on mice';
+      if (a.pose === 'eat') return 'grazing';
+      return S.diet === 'fish' ? 'looking for fish' : 'looking for food';
+    case A.REST: return a.pose === 'sleep' ? 'sleeping' : 'heading to bed';
+    case A.SOCIAL: return a.pose === 'groom' ? 'grooming a friend' : a.pose === 'idle' ? 'keeping company' : 'looking for company';
+    case A.EXPLORE: return 'exploring';
+    case A.FLEE: return 'fleeing!';
+    case A.PLAY: return 'playing';
+  }
+  return '';
+}
+
+const STATE_WORDS = [['hungry', 1], ['tired', 2], ['scared', 4], ['near food', 8], ['in the dark', 16], ['in winter', 32]];
+const ACTION_WORDS = ['eat', 'rest', 'seek company', 'explore', 'run', 'play'];
+function lessons(a) {
+  const out = [];
+  for (let s = 0; s < 64; s++) for (let k = 0; k < 6; k++) {
+    const v = a.q[s * 6 + k];
+    if (Math.abs(v) > 0.15) out.push({ s, k, v });
+  }
+  out.sort((p, q) => Math.abs(q.v) - Math.abs(p.v));
+  const seen = new Set(), lines = [];
+  for (const { s, k, v } of out) {
+    // "near food" is true most of the time, so only mention it when nothing else applies.
+    let when = STATE_WORDS.filter(([, b]) => s & b && b !== 8).map(([t]) => t);
+    if (!when.length) when = s & 8 ? ['food is close'] : ['all is calm'];
+    const key = `${k}:${v > 0}:${when[0]}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    lines.push(`${v > 0 ? 'Good' : 'Bad'} to ${ACTION_WORDS[k]} when ${when.slice(0, 2).join(' and ')}`);
+    if (lines.length >= 3) break;
+  }
+  return lines;
+}
+
+function trait(v, lo, hi) { return v > 0.62 ? hi : v < 0.38 ? lo : null; }
+
+function updateAnimalPanel() {
+  const panel = $('inspect');
+  const a = world.animals.find(b => b.id === watched);
+  if (!a) {
+    if (watched >= 0) { panel.innerHTML = '<p>Gone. Its story is in the valley history.</p>'; watched = -1; renderer.selected = -1; renderer.follow = -1; }
+    return;
+  }
+  const S = SPECIES[a.sp];
+  const age = ageYears(world, a);
+  const ageText = age < 1 ? `${Math.max(1, Math.round(age * 28))} days old` : `${age.toFixed(1)} years old`;
+  const young = age < S.adult;
+  const traits = [trait(a.traits.bold, 'shy', 'bold'), trait(a.traits.social, 'a loner', 'sociable'),
+    trait(a.traits.curious, 'cautious', 'curious'), trait(a.traits.lazy, 'energetic', 'lazy')].filter(Boolean);
+  const mother = world.animals.find(b => b.id === a.mother);
+  const skillName = S.diet === 'fish' ? 'Fishing' : S.diet === 'wade' ? 'Fishing' : S.diet === 'hunt' ? 'Hunting' : 'Foraging';
+  const rows = [];
+  const add = (k, v) => rows.push(`<dt>${k}</dt><dd>${v}</dd>`);
+  add('Doing', doing(a));
+  add('Age', ageText + (young ? ' (young)' : ''));
+  if (traits.length) add('Nature', traits.join(', '));
+  add('Hunger', pct(a.hunger) + meter(a.hunger));
+  add('Energy', pct(a.energy) + meter(a.energy));
+  add('Loneliness', pct(a.lonely) + meter(a.lonely));
+  if (a.fear > 0.05) add('Fear', pct(a.fear) + meter(a.fear));
+  add('Body condition', pct(a.condition) + meter(a.condition));
+  add(skillName + ' skill', pct(a.skill) + meter(a.skill));
+  if (a.catches) add('Catches', a.catches);
+  if (mother) add('Mother', mother.name);
+  if (a.pregnant) add('Expecting', 'soon');
+  add('Remembers', `${a.memory.length} place${a.memory.length === 1 ? '' : 's'}`);
+  const learned = lessons(a);
+  panel.innerHTML = `<div class="sheet-head"><h3></h3><button class="close" aria-label="Close">×</button></div>
+    <dl>${rows.join('')}</dl>
+    ${learned.length ? `<p class="learned"><b>Has learned</b><br>${learned.join('<br>')}</p>` : '<p class="learned">Still working out how the world works.</p>'}
+    <button class="follow">${renderer.follow === a.id ? 'Stop following' : 'Follow'}</button>`;
+  panel.querySelector('h3').textContent = `${a.name} the ${S.label}${a.sex === 'f' ? ' ♀' : ' ♂'}`;
+  panel.querySelector('.close').onclick = () => { watched = -1; renderer.selected = -1; renderer.follow = -1; panel.classList.add('hidden'); };
+  panel.querySelector('.follow').onclick = () => { renderer.follow = renderer.follow === a.id ? -1 : a.id; updateAnimalPanel(); };
+  panel.classList.remove('hidden');
+}
 function pct(v) { return `${Math.round(v * 100)}%`; }
 function meter(v) { return `<div class="meter"><i style="width:${Math.round(Math.min(1, Math.max(0, v)) * 100)}%"></i></div>`; }
 function updateInspect() {
   const panel = $('inspect');
+  if (watched >= 0) { updateAnimalPanel(); return; }
   if (inspected < 0) { panel.classList.add('hidden'); return; }
   const k = inspected, w = world;
   const rows = [];
@@ -188,7 +281,7 @@ function setupInput() {
     if (!p) return;
     const dx = e.clientX - p.x, dy = e.clientY - p.y;
     p.x = e.clientX; p.y = e.clientY;
-    if (pointers.size === 1) { renderer.pan(dx, dy); moved += Math.abs(dx) + Math.abs(dy); }
+    if (pointers.size === 1) { renderer.pan(dx, dy); moved += Math.abs(dx) + Math.abs(dy); if (moved > 6) renderer.follow = -1; }
     else if (pointers.size === 2) {
       const [a, b] = [...pointers.values()];
       const d = Math.hypot(a.x - b.x, a.y - b.y);
@@ -202,8 +295,14 @@ function setupInput() {
     if (pointers.size === 0) {
       cv.classList.remove('dragging');
       if (moved < 6) {
-        const k = renderer.pick(e.clientX, e.clientY);
-        inspected = k === inspected ? -1 : k;
+        const a = renderer.pickAnimal(e.clientX, e.clientY);
+        if (a) {
+          watched = a.id; inspected = -1; renderer.selected = a.id;
+        } else {
+          watched = -1; renderer.selected = -1; renderer.follow = -1;
+          const k = renderer.pick(e.clientX, e.clientY);
+          inspected = k === inspected ? -1 : k;
+        }
         updateInspect();
       }
     }
@@ -249,7 +348,7 @@ function setupInput() {
     else if (e.key === '0') renderer.resetView();
     else if (e.key === '+' || e.key === '=') renderer.zoomAt(1.2, innerWidth / 2, innerHeight / 2);
     else if (e.key === '-') renderer.zoomAt(1 / 1.2, innerWidth / 2, innerHeight / 2);
-    else if (e.key === 'Escape') { inspected = -1; updateInspect(); $('historyPanel').classList.add('hidden'); closeOverlay(); }
+    else if (e.key === 'Escape') { inspected = -1; watched = -1; renderer.selected = -1; renderer.follow = -1; updateInspect(); $('historyPanel').classList.add('hidden'); closeOverlay(); }
   });
 
   // Fade the interface when the pointer rests.
@@ -296,13 +395,14 @@ function loop(now) {
   }
   frameAcc += dt;
   if (frameAcc >= 1 / 30) {
+    renderer.alpha = paused ? 1 : Math.min(1, acc);
     renderer.frame(frameAcc);
     frameAcc = 0;
   }
   hudAcc += dt;
   if (hudAcc > 0.25) { updateHud(); hudAcc = 0; }
   inspectAcc += dt;
-  if (inspected >= 0 && inspectAcc > 0.6) { updateInspect(); inspectAcc = 0; }
+  if ((inspected >= 0 || watched >= 0) && inspectAcc > 0.5) { updateInspect(); inspectAcc = 0; }
   if (now - lastSave > 30000) persist();
   requestAnimationFrame(loop);
 }

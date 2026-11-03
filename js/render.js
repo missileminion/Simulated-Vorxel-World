@@ -6,6 +6,7 @@ import { N, MAX_H, BASE_DEPTH, DAYS_PER_YEAR } from './config.js';
 import { hash2, clamp } from './rng.js';
 import { TREE } from './vegetation.js';
 import { MAT } from './terrain.js';
+import { drawCreatures } from './creatures.js';
 import { MAT_COLORS, COL, mix, shade, rgb, rgba, grassColor, leafState, skyColors, lightTint } from './palette.js';
 
 const TW = 12, TH = 6, VH = 5;          // tile width/height and one voxel step, in world pixels
@@ -36,6 +37,10 @@ export class Renderer {
     this.flakes = [];
     this.stars = Array.from({ length: 140 }, (_, k) => ({ x: hash2(k, 1, 7), y: hash2(k, 2, 7) * 0.6, s: 0.5 + hash2(k, 3, 7) * 1.2, p: hash2(k, 4, 7) * 6.28 }));
     this.flash = 0;
+    this.alpha = 1;
+    this.selected = -1;
+    this.follow = -1;
+    this.animalScreen = [];
     this.time = 0;
     this.drift = true;
     this.resize();
@@ -49,7 +54,7 @@ export class Renderer {
     const ctx = c.getContext('2d');
     return {
       canvas: c, ctx,
-      sx: new Float32Array(N * N), sy: new Float32Array(N * N), di: new Int16Array(N * N), dj: new Int16Array(N * N),
+      sx: new Float32Array(N * N), sy: new Float32Array(N * N), di: new Int16Array(N * N), dj: new Int16Array(N * N), surf: new Int16Array(N * N),
       water: [], flowing: [], fishy: [],
     };
   }
@@ -61,6 +66,15 @@ export class Renderer {
       case 1: return (N - 1 - i) * N + j;
       case 2: return (N - 1 - j) * N + (N - 1 - i);
       default: return i * N + (N - 1 - j);
+    }
+  }
+  // world position (float) -> display coordinates
+  toDisplay(x, y) {
+    switch (this.rot) {
+      case 0: return [x, y];
+      case 1: return [N - 1 - y, x];
+      case 2: return [N - 1 - x, N - 1 - y];
+      default: return [y, N - 1 - x];
     }
   }
   // world flow vector -> display direction
@@ -180,7 +194,7 @@ export class Renderer {
     const cx = this.originX + (i - j) * HW;
     const baseY = this.originY + (i + j) * HH;
     const ty = baseY - s * VH;
-    buf.sx[k] = cx; buf.sy[k] = ty; buf.di[k] = i; buf.dj[k] = j;
+    buf.sx[k] = cx; buf.sy[k] = ty; buf.di[k] = i; buf.dj[k] = j; buf.surf[k] = s;
 
     const haze = 0.1 * (1 - (i + j) / (2 * N - 2)) + clamp((s - 20) / 60, 0, 0.08);
     const ground = this.groundColor(w, k, grassC, x, y);
@@ -390,8 +404,15 @@ export class Renderer {
     const ctx = this.ctx, W = this.canvas.width, H = this.canvas.height, dpr = this.dpr;
     const cam = this.cam;
     const z = cam.fit * cam.userZoom * dpr;
+    if (this.follow >= 0) {
+      const it = this.animalScreen.find(t => t.a.id === this.follow);
+      if (it) {
+        cam.panX += (it.sx - (cam.x + cam.panX)) * Math.min(1, dt * 2);
+        cam.panY += (it.sy - (cam.y + cam.panY)) * Math.min(1, dt * 2);
+      } else this.follow = -1;
+    }
     let cx = cam.x + cam.panX, cy = cam.y + cam.panY;
-    if (this.drift) { cx += Math.sin(this.time * 0.021) * 6; cy += Math.cos(this.time * 0.017) * 3; }
+    if (this.drift && this.follow < 0) { cx += Math.sin(this.time * 0.021) * 6; cy += Math.cos(this.time * 0.017) * 3; }
     this.view = { z, cx, cy, W, H };
     const toScreen = () => this.sctx.setTransform(z, 0, 0, z, W / 2 - cx * z, H / 2 - cy * z);
 
@@ -435,6 +456,7 @@ export class Renderer {
     sctx.drawImage(this.front.canvas, 0, 0, this.worldW, this.worldH);
     this.updateParticles(dt);
     this.drawWaterLife(sctx, dt);
+    drawCreatures(this, sctx, this.alpha, this.time);
     this.drawCloudShadows(sctx, dt);
 
     sctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -674,6 +696,19 @@ export class Renderer {
   }
 
   // ---------- picking & camera ----------
+
+  pickAnimal(clientX, clientY) {
+    const r = this.canvas.getBoundingClientRect();
+    const { z, cx, cy, W, H } = this.view;
+    const px = ((clientX - r.left) * this.dpr - W / 2) / z + cx;
+    const py = ((clientY - r.top) * this.dpr - H / 2) / z + cy;
+    let best = null, bestD = Math.max(5, 14 / (z / this.dpr));
+    for (const it of this.animalScreen) {
+      const d = Math.hypot(it.sx - px, it.sy - 2 - py);
+      if (d < bestD) { bestD = d; best = it.a; }
+    }
+    return best;
+  }
 
   pick(clientX, clientY) {
     const r = this.canvas.getBoundingClientRect();
