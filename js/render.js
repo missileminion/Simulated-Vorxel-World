@@ -6,12 +6,12 @@ import { N, MAX_H, BASE_DEPTH, DAYS_PER_YEAR } from './config.js';
 import { hash2, clamp } from './rng.js';
 import { TREE } from './vegetation.js';
 import { MAT } from './terrain.js';
-import { drawCreatures } from './creatures.js';
+import { drawCreatures, drawSchools, drawBubbles } from './creatures.js';
 import { MAT_COLORS, COL, mix, shade, rgb, rgba, grassColor, leafState, skyColors, lightTint } from './palette.js';
 
 const TW = 12, TH = 6, VH = 5;          // tile width/height and one voxel step, in world pixels
 const HW = TW / 2, HH = TH / 2;
-const CS = 2;                           // cache resolution multiplier
+const CS = 1.5;                         // cache resolution multiplier
 const LEFT = 0.86, RIGHT = 0.72;        // face lighting
 const E = 0.35;                         // tiny overlap to hide seams
 
@@ -456,6 +456,7 @@ export class Renderer {
     sctx.drawImage(this.front.canvas, 0, 0, this.worldW, this.worldH);
     this.updateParticles(dt);
     this.drawWaterLife(sctx, dt);
+    drawSchools(this, sctx, this.alpha, this.time);
     drawCreatures(this, sctx, this.alpha, this.time);
     this.drawCloudShadows(sctx, dt);
 
@@ -484,6 +485,8 @@ export class Renderer {
       ctx.fillRect(0, 0, W, H);
       this.flash = Math.max(0, this.flash - dt * 3);
     }
+
+    drawBubbles(this, ctx);
 
     // Vignette
     const vg = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.35, W / 2, H / 2, Math.max(W, H) * 0.75);

@@ -36,41 +36,58 @@ function distToPolyline(px, py, pts) {
   return Math.sqrt(best);
 }
 
+function bezier(p0, p1, p2, n = 40) {
+  const out = [];
+  for (let k = 0; k <= n; k++) {
+    const t = k / n, a = (1 - t) * (1 - t), b = 2 * (1 - t) * t, c = t * t;
+    out.push({ u: a * p0.u + b * p1.u + c * p2.u, v: a * p0.v + b * p1.v + c * p2.v });
+  }
+  return out;
+}
+
 export function generateTerrain(world) {
   const { seed, terrain, material } = world;
 
+  // Main river from the mountain corner to the outlet, plus two side streams.
   const main = [];
-  for (let u = 0; u <= 1.0001; u += 0.01) main.push({ u, v: meander(u, seed) });
-  const join = 0.56;
-  const t0 = { u: 0.27, v: -0.48 }, t1 = { u: 0.42, v: -0.44 }, t2 = { u: join, v: meander(join, seed) };
-  const trib = [];
-  for (let k = 0; k <= 30; k++) {
-    const t = k / 30, a = (1 - t) * (1 - t), b = 2 * (1 - t) * t, c = t * t;
-    trib.push({ u: a * t0.u + b * t1.u + c * t2.u, v: a * t0.v + b * t1.v + c * t2.v });
-  }
-  const mainXY = polyline(main), tribXY = polyline(trib);
-  const lakeU = 0.83, lakeC = toXY(lakeU, meander(lakeU, seed));
-  const dMainArr = new Float32Array(N * N);
+  for (let u = 0; u <= 1.0001; u += 0.005) main.push({ u, v: meander(u, seed) });
+  const j1 = 0.52, j2 = 0.68;
+  const t0 = { u: 0.24, v: -0.42 }, t1 = { u: 0.30, v: 0.46 };
+  const tribs = [
+    bezier(t0, { u: 0.38, v: -0.42 }, { u: j1, v: meander(j1, seed) }),
+    bezier(t1, { u: 0.5, v: 0.5 }, { u: j2, v: meander(j2, seed) }),
+  ];
+  const mainXY = polyline(main), tribXY = tribs.map(polyline);
+  // Basins: a pond in the upper valley and the big lake near the outlet.
+  const basins = [
+    { c: toXY(0.40, meander(0.40, seed)), r: 5.5, depth: 2.6 },
+    { c: toXY(0.84, meander(0.84, seed)), r: 11, depth: 3.8 },
+  ];
+  const dMainArr = new Float32Array(N * N), dTribArr = new Float32Array(N * N), lakeArr = new Float32Array(N * N);
 
   for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
     const i = y * N + x;
     const { u } = toUV(x, y);
     const dMain = distToPolyline(x, y, mainXY);
-    const dTrib = distToPolyline(x, y, tribXY);
-    dMainArr[i] = dMain;
+    const dTrib = Math.min(...tribXY.map(t => distToPolyline(x, y, t)));
+    dMainArr[i] = dMain; dTribArr[i] = dTrib;
     const dValley = Math.min(dMain, dTrib * 1.5);
 
-    const floor = 3.5 + Math.pow(1 - u, 1.5) * 24;
-    const walls = smoothstep(3, 38, dValley) * (8 + 11 * fbm(x * 0.03, y * 0.03, seed + 5, 3));
-    const peaks = Math.pow(1 - u, 2.2) * 15 * fbm(x * 0.07, y * 0.07, seed + 9, 4);
-    const hills = (fbm(x * 0.05, y * 0.05, seed, 5) - 0.5) * 7 * smoothstep(2, 14, dValley);
+    const floor = 3.5 + Math.pow(1 - u, 1.5) * 26;
+    const walls = smoothstep(3, 40, dValley) * (8 + 11 * fbm(x * 0.03, y * 0.03, seed + 5, 3));
+    const peaks = Math.pow(1 - u, 2.2) * 15 * fbm(x * 0.06, y * 0.06, seed + 9, 4);
+    const hills = (fbm(x * 0.045, y * 0.045, seed, 5) - 0.5) * 7 * smoothstep(2, 14, dValley);
     let h = floor + walls + peaks + hills;
 
-    h -= 1.5 * (1 - smoothstep(0.4, 3.0, dMain));
+    h -= 1.6 * (1 - smoothstep(0.4, 3.2, dMain));
     h -= 1.0 * (1 - smoothstep(0.3, 2.2, dTrib));
-    const lr = Math.hypot(x - lakeC.x, y - lakeC.y) / (N * 0.085);
-    h -= 3.6 * Math.exp(-lr * lr * 1.5);
-
+    let lake = 0;
+    for (const b of basins) {
+      const lr = Math.hypot(x - b.c.x, y - b.c.y) / b.r;
+      h -= b.depth * Math.exp(-lr * lr * 1.5);
+      lake = Math.max(lake, 1 / Math.max(lr, 0.01));
+    }
+    lakeArr[i] = lake;
     terrain[i] = clamp(h, 0.6, MAX_H - 2);
   }
 
@@ -83,9 +100,8 @@ export function generateTerrain(world) {
     if (y > 0) slope = Math.max(slope, Math.abs(h - terrain[i - N]));
     if (y < L) slope = Math.max(slope, Math.abs(h - terrain[i + N]));
     const { u } = toUV(x, y);
-    const dMain = dMainArr[i];
-    const dTrib = distToPolyline(x, y, tribXY);
-    const lr = Math.hypot(x - lakeC.x, y - lakeC.y) / (N * 0.085);
+    const dMain = dMainArr[i], dTrib = dTribArr[i];
+    const lr = 1 / lakeArr[i];
     const patch = fbm(x * 0.08, y * 0.08, seed + 21, 3);
     let m = MAT.SOIL;
     if (h > 32 || slope > 2.6) m = MAT.ROCK;
@@ -103,15 +119,14 @@ export function generateTerrain(world) {
     return y * N + x;
   };
   // River inflow from the larger catchment beyond the map.
-  const src = toXY(0.035, meander(0.035, seed));
-  const tsrc = toXY(t0.u + 0.01, t0.v);
   world.springs = [
-    { i: cell(src), share: 0.75 },
-    { i: cell(tsrc), share: 0.25 },
+    { i: cell(toXY(0.03, meander(0.03, seed))), share: 0.6 },
+    { i: cell(toXY(t0.u + 0.008, t0.v)), share: 0.2 },
+    { i: cell(toXY(t1.u + 0.008, t1.v)), share: 0.2 },
   ];
-  // A hot spring on the far slope.
-  let hot = cell(toXY(0.47, 0.42));
-  for (let k = 0; k < 40 && dMainArr[hot] < 6; k++) hot = cell(toXY(0.47, 0.42 + k * 0.01));
+  // A hot spring on a slope away from the streams.
+  let hot = cell(toXY(0.5, -0.2));
+  for (let k = 0; k < 60 && (dMainArr[hot] < 7 || dTribArr[hot] < 5); k++) hot = cell(toXY(0.5 + (k % 5) * 0.01, -0.2 - Math.floor(k / 5) * 0.03));
   world.hotSpring = hot;
 }
 

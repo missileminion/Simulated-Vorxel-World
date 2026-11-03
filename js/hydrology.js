@@ -16,10 +16,11 @@ const EVAP_SOIL = 1.1e-4;     // m/min transpiration from wet, vegetated soil (c
 const MELT = 2.6e-5;          // m/min of snow per °C above freezing
 
 // Catchment beyond the map edge feeding the river.
-const CATCH_AREA = 20000;     // cells of hidden catchment
+const CATCH_AREA = 48000;     // cells of hidden catchment (sized for the 160-cell valley)
 const CATCH_EFF = 0.45;       // fraction of catchment rain that becomes river water
 const QUICK = 0.12;           // fraction of that which arrives right away (floods)
 const BASEFLOW_TAU = 8640;    // minutes; groundwater release time constant
+const RECHARGE_TO_RIVER = 0.25; // share of water soaking through the valley soil that returns to the river (the rest goes deep)
 
 // Erosion is deliberately tiny: ordinary flow barely moves the bed, floods do most.
 const EROSION_CAP = 0.012;
@@ -29,7 +30,7 @@ const DEPOSIT_RATE = 0.03;
 const PERM = [0.05, 1.3, 1.5, 0.55, 0.2, 0.85, 0.6];
 const RESIST = [0.04, 0.35, 1, 1, 0.45, 0.75, 0.6];
 
-export function initialGroundwater() { return 0.24 * BASEFLOW_TAU; }
+export function initialGroundwater() { return 0.55 * BASEFLOW_TAU; }
 
 export function cellTemp(w, i) {
   return w.climate.temp - (w.terrain[i] - 8) * 0.16 + w.warm[i];
@@ -152,7 +153,7 @@ export function stepSources(w) {
     const m = Math.min(w.catchSnow, w.catchSnow * 0.0006 * (mtnTemp - 0.5) / 10 + 0.01);
     w.catchSnow -= m; w.groundwater += m;
   }
-  w.groundwater += recharge;
+  w.groundwater += recharge * RECHARGE_TO_RIVER;
   const base = w.groundwater / BASEFLOW_TAU;
   w.groundwater -= base;
   const inflow = base + quick;

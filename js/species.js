@@ -6,6 +6,7 @@ export const A = { EAT: 0, REST: 1, SOCIAL: 2, EXPLORE: 3, FLEE: 4, PLAY: 5 };
 
 export const SPECIES = {
   otter: {
+    strength: 0.5,
     label: 'otter', plural: 'otters',
     diet: 'fish', swim: true, wade: 99, climb: 2.2,
     speed: 0.9, swimSpeed: 1.6, runSpeed: 2.2,
@@ -18,6 +19,7 @@ export const SPECIES = {
     named: true,
   },
   deer: {
+    strength: 0.8,
     label: 'deer', plural: 'deer',
     diet: 'graze', swim: false, wade: 0.45, climb: 2.6,
     speed: 0.8, swimSpeed: 0.4, runSpeed: 2.6,
@@ -29,6 +31,7 @@ export const SPECIES = {
     predators: [], youngPredators: ['fox'],
   },
   rabbit: {
+    strength: 0.12,
     label: 'hare', plural: 'hares',
     diet: 'graze', swim: false, wade: 0.12, climb: 1.6,
     speed: 0.7, swimSpeed: 0.2, runSpeed: 2.8,
@@ -40,6 +43,7 @@ export const SPECIES = {
     predators: ['fox'], youngPredators: ['fox'],
   },
   fox: {
+    strength: 0.45,
     label: 'fox', plural: 'foxes',
     diet: 'hunt', swim: false, wade: 0.25, climb: 2.2,
     speed: 0.8, swimSpeed: 0.3, runSpeed: 2.9,
@@ -51,6 +55,7 @@ export const SPECIES = {
     predators: [], youngPredators: [],
   },
   heron: {
+    strength: 0.35,
     label: 'heron', plural: 'herons',
     diet: 'wade', swim: false, wade: 0.55, climb: 99,
     speed: 0.5, swimSpeed: 0.3, runSpeed: 3.5, fly: true,

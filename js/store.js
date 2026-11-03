@@ -40,6 +40,9 @@ export function save(world, settings) {
     log: world.log.toJSON(),
     terrainBase: f32(world.terrainBase),
     animals: serializeAnimals(world),
+    schools: world.schools,
+    awayHerons: world.awayHerons || [],
+    nextSchoolId: world.nextSchoolId,
     nextAnimalId: world.nextAnimalId,
     fields,
   };
@@ -81,6 +84,8 @@ export function load() {
     w.log.load(d.log);
     if (d.animals) { loadAnimals(w, d.animals); w.nextAnimalId = d.nextAnimalId || 1; }
     else seedAnimals(w); // saves from before animals existed
+    w.schools = d.schools || []; w.nextSchoolId = d.nextSchoolId || 1;
+    w.awayHerons = d.awayHerons || [];
     w.prepare();
     w.updateWetList();
     w.computeStats();

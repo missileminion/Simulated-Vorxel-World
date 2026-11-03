@@ -7,7 +7,7 @@ import { generateTerrain, placeName } from './terrain.js';
 import { Climate, calendar } from './climate.js';
 import { stepWater, stepSources, dailyMoistureSpread, buildWarmMap, initialGroundwater } from './hydrology.js';
 import { seedInitialVegetation, dailyVegetation, hourlyFire, tryLightning, TREE } from './vegetation.js';
-import { dailyFish, seedInitialFish } from './fish.js';
+import { seedSchools, tickSchools, dailySchools, rebuildFishMap, fishTotal } from './fish.js';
 import { EventLog } from './events.js';
 import { seedAnimals, tickAnimals, dailyAnimals, approxDayAnimals } from './animals.js';
 import { SPECIES_KEYS } from './species.js';
@@ -43,6 +43,8 @@ export class World {
     this.stats = {};
     this.animals = [];
     this.nextAnimalId = 1;
+    this.schools = [];
+    this.nextSchoolId = 1;
     this.birthsToday = {};
     this.deathsToday = {};
     this.revision = 0;              // bumps when something visible changed a lot
@@ -54,7 +56,7 @@ export class World {
     w.prepare();
     w.warmup();
     seedInitialVegetation(w);
-    seedInitialFish(w);
+    seedSchools(w);
     w.updateWetList();
     seedAnimals(w);
     w.computeStats();
@@ -81,7 +83,11 @@ export class World {
   warmup() {
     const c = this.climate;
     c.temp = 12; c.precip = 0; c.sun = 0.5;
-    for (let k = 0; k < 9000; k++) {
+    // Fill faster with a temporarily swollen river, then settle at normal flow.
+    const gw = this.groundwater;
+    this.groundwater = gw * 4;
+    for (let k = 0; k < 6000; k++) {
+      if (k === 3500) this.groundwater = gw;
       stepSources(this);
       stepWater(this);
     }
@@ -99,6 +105,7 @@ export class World {
     const cal = this.climate.update(this.minute, this.rng);
     stepSources(this);
     stepWater(this);
+    tickSchools(this);
     tickAnimals(this);
     this.minute++;
     const m = this.minute % MIN_PER_DAY;
@@ -115,6 +122,7 @@ export class World {
 
   hourly() {
     this.updateWetList();
+    rebuildFishMap(this);
     const lit = tryLightning(this, this.rng);
     if (lit >= 0 && !this.monitor.fire) {
       this.monitor.fire = { start: this.minute, where: placeName(lit), cells: 0 };
@@ -140,7 +148,7 @@ export class World {
     const cal = this.cal;
     dailyMoistureSpread(this);
     dailyVegetation(this, cal);
-    dailyFish(this, cal);
+    dailySchools(this, cal);
     if (!this.approximating) dailyAnimals(this, cal);
     this.computeStats();
     this.checkEvents(cal);
@@ -205,7 +213,7 @@ export class World {
     const n = this.water.length;
     this.stats = {
       water, wetCells, trees, decid, conifers, shrubs, snags,
-      grass: grass / n, moist: moist / n, fish, snowCells: snow, iceCells: ice,
+      grass: grass / n, moist: moist / n, fish: fishTotal(this), schools: this.schools.length, snowCells: snow, iceCells: ice,
       drained: this.drainedToday, inflow: this.inflowToday, groundwater: this.groundwater,
       maxErode, maxDep, burning: this.burning.length,
       animals: Object.fromEntries(SPECIES_KEYS.map(sp => [sp, this.animals.filter(a => a.sp === sp).length])),
@@ -234,7 +242,7 @@ export class World {
     if (!mon.snow && snowy) { mon.snow = true; this.log.add(t, 'Snow blankets the valley.', 'season'); }
     else if (mon.snow && s.snowCells < this.water.length * 0.05) { mon.snow = false; this.log.add(t, 'The last of the snow melts from the valley floor.', 'season'); }
 
-    if (mon.fishTotal > 50 && s.fish < mon.fishTotal * 0.7) this.log.add(t, 'Many fish die as the water warms and shrinks.', 'life');
+    if (mon.fishTotal > 400 && s.fish < mon.fishTotal * 0.75) this.log.add(t, 'Many fish die as the water warms and shrinks.', 'life');
     mon.fishTotal = s.fish;
 
     if (cal.doy === DAYS_PER_YEAR - 1) {

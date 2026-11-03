@@ -11,6 +11,7 @@ import { TREE_NAMES } from './vegetation.js';
 import { cellTemp } from './hydrology.js';
 import { SPECIES, SPECIES_KEYS, ACTIONS, A } from './species.js';
 import { ageYears } from './animals.js';
+import { belief, hedge, timeAgo } from './mind.js';
 
 const $ = id => document.getElementById(id);
 const params = new URLSearchParams(location.search);
@@ -105,8 +106,9 @@ function updateHud() {
   $('speed').textContent = `${SPEEDS[settings.speed]}×`;
   $('pop').textContent = SPECIES_KEYS.map(sp => {
     const n = world.animals.filter(a => a.sp === sp).length;
+    if (sp === 'heron' && !n && world.awayHerons && world.awayHerons.length) return 'herons away south';
     return `${n} ${n === 1 ? SPECIES[sp].label : SPECIES[sp].plural}`;
-  }).join(' · ');
+  }).join(' · ') + ` · ~${Math.round(world.stats.fish / 10) * 10} fish`;
 }
 
 function renderLog() {
@@ -217,13 +219,53 @@ function updateAnimalPanel() {
   if (a.catches) add('Catches', a.catches);
   if (mother) add('Mother', mother.name);
   if (a.pregnant) add('Expecting', 'soon');
-  add('Remembers', `${a.memory.length} place${a.memory.length === 1 ? '' : 's'}`);
+  if (a.health < 0.95) add('Wounds', pct(1 - a.health) + meter(1 - a.health));
+  const m = a.mind;
+  const moods = [];
+  if (m.grief > 0.3) moods.push(`missing ${m.griefFor || 'someone'}`);
+  if (m.happy > 0.7) moods.push('happy');
+  else if (m.happy < 0.3) moods.push('glum');
+  if (m.bored > 0.55) moods.push('bored');
+  if (m.frustrated > 0.45) moods.push('frustrated');
+  if (m.confident > 0.7) moods.push('confident');
+  if (a.fear > 0.4) moods.push('scared');
+  add('Feels', moods.join(', ') || 'calm');
   const learned = lessons(a);
+  // Beliefs, in its own words.
+  const beliefs = [];
+  for (const k in m.b) {
+    const [kind, what] = k.split(':');
+    const name = m.nick[what] || (SPECIES[what] ? SPECIES[what].plural : what);
+    const p = belief(a, k);
+    if (kind === 'fear') beliefs.push(`${name} are dangerous: ${hedge(p)}`);
+    else if (kind === 'hunt') beliefs.push(`catching ${name} works: ${hedge(p)}`);
+    else if (kind === 'hurt') beliefs.push(`${name} fight back: ${hedge(p)}`);
+    else if (kind === 'fight') beliefs.push(`can beat ${name}: ${hedge(p)}`);
+    else if (kind === 'fishing') beliefs.push(`chasing fish pays off: ${hedge(p)}`);
+  }
+  const places = a.memory.filter(mm => mm.name).slice(0, 4).map(mm => `${mm.name}${mm.kind === 'danger' ? ' (scary)' : ''}`);
   panel.innerHTML = `<div class="sheet-head"><h3></h3><button class="close" aria-label="Close">×</button></div>
+    <ol class="thoughts"></ol>
     <dl>${rows.join('')}</dl>
+    <p class="learned beliefs"></p>
+    <p class="learned places"></p>
     ${learned.length ? `<p class="learned"><b>Has learned</b><br>${learned.join('<br>')}</p>` : '<p class="learned">Still working out how the world works.</p>'}
     <button class="follow">${renderer.follow === a.id ? 'Stop following' : 'Follow'}</button>`;
   panel.querySelector('h3').textContent = `${a.name} the ${S.label}${a.sex === 'f' ? ' ♀' : ' ♂'}`;
+  const ol = panel.querySelector('.thoughts');
+  for (const t of m.thoughts.slice(-4).reverse()) {
+    const li = document.createElement('li');
+    const when = document.createElement('span');
+    when.className = 'when';
+    when.textContent = timeAgo(world.minute - t.t);
+    li.append(`“${t.text}”`, when);
+    ol.appendChild(li);
+  }
+  if (!m.thoughts.length) ol.remove();
+  const bp = panel.querySelector('.beliefs');
+  if (beliefs.length) { bp.innerHTML = '<b>Believes</b><br>'; bp.append(...beliefs.slice(0, 4).flatMap((b, n) => n ? [document.createElement('br'), b] : [b])); } else bp.remove();
+  const pp = panel.querySelector('.places');
+  if (places.length) { pp.innerHTML = '<b>Places it named</b><br>'; pp.append(places.join(' · ')); } else pp.remove();
   panel.querySelector('.close').onclick = () => { watched = -1; renderer.selected = -1; renderer.follow = -1; panel.classList.add('hidden'); };
   panel.querySelector('.follow').onclick = () => { renderer.follow = renderer.follow === a.id ? -1 : a.id; updateAnimalPanel(); };
   panel.classList.remove('hidden');

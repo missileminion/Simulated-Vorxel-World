@@ -1,6 +1,6 @@
 // World-wide constants. One cell is roughly 2 m across, one voxel step is 1 m high.
 
-export const N = 96;                 // the valley is N x N columns
+export const N = 160;                // the valley is N x N columns
 export const MAX_H = 44;             // tallest possible terrain (voxels)
 export const BASE_DEPTH = 3;         // how far the diorama base goes below height 0
 
@@ -16,10 +16,10 @@ export const SEASON_NAMES = ['Spring', 'Summer', 'Autumn', 'Winter'];
 export const GAME_MIN_PER_REAL_SEC = 2;
 export const SPEEDS = [1, 5, 30, 150];
 
-// Catching up after the page was closed: exact simulation for the first week,
-// then a cheaper daily approximation, up to a cap.
-export const EXACT_CATCHUP_MIN = 7 * MIN_PER_DAY;
+// Catching up after the page was closed: exact simulation for the first three
+// valley days, then a cheaper daily approximation, up to a cap.
+export const EXACT_CATCHUP_MIN = 3 * MIN_PER_DAY;
 export const MAX_CATCHUP_DAYS = 2 * DAYS_PER_YEAR;
 
-export const SAVE_KEY = 'svw.world.v1';
-export const SAVE_VERSION = 1;
+export const SAVE_KEY = 'svw.world.v2';
+export const SAVE_VERSION = 2;
