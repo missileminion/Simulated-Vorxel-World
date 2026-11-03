@@ -134,7 +134,7 @@ export function tickSchools(w) {
     let fear = s.fear * 0.92;
     const shallow = w.water[here] < 0.6;
     for (const p of preds) {
-      const range = (p.sp === 'otter' ? 4 : shallow ? 2.5 : 0) * (1 + s.wary * 0.8) * (w.climate.temp < 4 ? 0.6 : 1);
+      const range = (p.sp === 'otter' ? 4 : shallow ? 2.5 : 0) * (1 + s.wary * 0.8) * (w.climate.temp < 4 ? 0.6 : 1) * (w.climate.elev < -0.05 ? 0.6 + 0.4 * w.climate.moonLight : 1);
       if (!range) continue;
       const d = Math.hypot(p.x - s.x, p.y - s.y);
       if (d < range && (p.sp !== 'heron' || p.pose === 'stalk' || p.flying)) {

@@ -158,20 +158,150 @@ export class Renderer {
       const d = j * N + i;
       g[d] = gr; surf[d] = s; wtop[d] = hasBody;
     }
+    buf.g = g; buf.surfD = surf; buf.wtop = wtop;
 
     ctx.setTransform(CS, 0, 0, CS, 0, 0);
     ctx.clearRect(0, 0, this.worldW, this.worldH);
     const t0 = performance.now();
 
     for (let s = 0; s < 2 * N - 1; s++) {
+      this.fine = 0;
       const iMin = Math.max(0, s - (N - 1)), iMax = Math.min(N - 1, s);
       for (let i = iMin; i <= iMax; i++) {
         const j = s - i;
+        this.fine = 0;
         this.drawColumn(ctx, buf, w, i, j, g, surf, wtop, grassC, leaf, yf);
       }
       if (s % 6 === 5) yield;
     }
     this.lastBuildMs = performance.now() - t0;
+    this.dataVersion = (this.dataVersion || 0) + 1;
+  }
+
+  // ---------- close-up detail ----------
+  // When zoomed in past the overview cache's resolution, the part of the valley
+  // in view is redrawn at screen resolution, with extra texture fading in.
+
+  makeDetail() {
+    const c = document.createElement('canvas');
+    return { canvas: c, ctx: c.getContext('2d'), rect: null, scale: 0, fine: 0, version: -1, rot: -1 };
+  }
+
+  *detailJob(det, rect, scale, fine) {
+    const w = this.world, src = this.front;
+    if (!src.surfD) return;
+    const cal = w.cal, yf = cal.yearFrac;
+    const grassC = grassColor(yf), leaf = leafState(yf, 0);
+    const cw = Math.ceil(rect.w * scale), ch = Math.ceil(rect.h * scale);
+    if (det.canvas.width !== cw || det.canvas.height !== ch) { det.canvas.width = cw; det.canvas.height = ch; }
+    const ctx = det.ctx;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, cw, ch);
+    ctx.setTransform(scale, 0, 0, scale, -rect.x * scale, -rect.y * scale);
+    const dummy = { sx: new Float32Array(N * N), sy: new Float32Array(N * N), di: new Int16Array(N * N), dj: new Int16Array(N * N), surf: new Int16Array(N * N), water: [], flowing: [], fishy: [] };
+    const x0 = rect.x - TW, x1 = rect.x + rect.w + TW, y0 = rect.y - 4 * VH, y1 = rect.y + rect.h + 40;
+    let n = 0;
+    for (let s = 0; s < 2 * N - 1; s++) {
+      this.fine = fine;
+      const iMin = Math.max(0, s - (N - 1)), iMax = Math.min(N - 1, s);
+      const baseY = this.originY + s * HH;
+      if (baseY - (MAX_H + 6) * VH > y1) break;
+      if (baseY + (BASE_DEPTH + 2) * VH < y0) continue;
+      for (let i = iMin; i <= iMax; i++) {
+        const j = s - i;
+        const cx = this.originX + (i - j) * HW;
+        if (cx < x0 || cx > x1) continue;
+        const ty = baseY - src.surfD[j * N + i] * VH;
+        if (ty - 30 > y1) continue;
+        const bottom = (i === N - 1 || j === N - 1) ? baseY + (BASE_DEPTH + 1) * VH : ty + 6 * VH;
+        if (bottom < y0) continue;
+        this.fine = fine;   // set per column: the overview build may run between our steps
+        this.drawColumn(ctx, dummy, w, i, j, src.g, src.surfD, src.wtop, grassC, leaf, yf);
+        if (++n % 220 === 0) yield;
+      }
+    }
+    this.fine = 0;
+  }
+
+  // Keep a close-up image matching the view; rebuild it in the background when the view moves.
+  updateDetail(view, budgetMs) {
+    const z = view.z;
+    const want = z > CS * 1.15;
+    if (!want) { this.detailJobGen = null; return; }
+    if (!this.detail) { this.detail = this.makeDetail(); this.detailBack = this.makeDetail(); }
+    const vw = view.W / z, vh = view.H / z;
+    const vis = { x: view.cx - vw / 2, y: view.cy - vh / 2, w: vw, h: vh };
+    const d = this.detail;
+    const scale = Math.min(z, 8);
+    const covers = d.rect && vis.x >= d.rect.x && vis.y >= d.rect.y && vis.x + vis.w <= d.rect.x + d.rect.w && vis.y + vis.h <= d.rect.y + d.rect.h;
+    const scaleOk = d.scale && Math.abs(d.scale - scale) / scale < 0.18;
+    const stale = d.version !== this.dataVersion || d.rot !== this.rot;
+    if (!this.detailJobGen && (!covers || !scaleOk || (stale && performance.now() - (this.detailDone || 0) > 2500))) {
+      const m = 0.22;
+      const rect = { x: vis.x - vw * m, y: vis.y - vh * m, w: vw * (1 + 2 * m), h: vh * (1 + 2 * m) };
+      const fine = clamp((z / this.dpr / (this.cam.fit || 1) - 1.6) / 2.4, 0, 1);
+      const b = this.detailBack;
+      b.rect = rect; b.scale = scale; b.fine = fine; b.version = this.dataVersion; b.rot = this.rot;
+      this.detailJobGen = this.detailJob(b, rect, scale, fine);
+    }
+    if (this.detailJobGen) {
+      const end = performance.now() + budgetMs;
+      while (performance.now() < end) {
+        if (this.detailJobGen.next().done) {
+          const t = this.detail; this.detail = this.detailBack; this.detailBack = t;
+          this.detailJobGen = null; this.detailDone = performance.now();
+          break;
+        }
+      }
+    }
+  }
+
+  // Draw the landscape image (sharp close-up when available) in world coordinates.
+  drawTerrain(ctx) {
+    const d = this.detail, v = this.view;
+    const zoomed = v && v.z > CS * 1.15;
+    if (zoomed && d && d.rect && d.scale && Math.abs(d.scale - Math.min(v.z, 8)) / v.z < 0.45) {
+      const vw = v.W / v.z, vh = v.H / v.z, vx = v.cx - vw / 2, vy = v.cy - vh / 2;
+      const covers = vx >= d.rect.x - 2 && vy >= d.rect.y - 2 && vx + vw <= d.rect.x + d.rect.w + 2 && vy + vh <= d.rect.y + d.rect.h + 2;
+      if (covers) { ctx.drawImage(d.canvas, d.rect.x, d.rect.y, d.rect.w, d.rect.h); return; }
+    }
+    ctx.drawImage(this.front.canvas, 0, 0, this.worldW, this.worldH);
+  }
+
+  // Paint the land in front of each animal back over it, so hills hide what is behind them.
+  occlude(ctx) {
+    const b = this.front;
+    if (!b.surfD) return;
+    const polys = [];
+    for (const it of this.animalScreen) {
+      if (!it.vis || it.a.flying) continue;
+      const [fi, fj] = this.toDisplay(it.a.x, it.a.y);
+      const i0 = Math.round(fi), j0 = Math.round(fj);
+      const sA = b.surfD[clamp(j0, 0, N - 1) * N + clamp(i0, 0, N - 1)];
+      const top = it.headY ?? it.sy - 12;
+      for (let i = i0 - 2; i <= i0 + 12; i++) for (let j = j0 - 2; j <= j0 + 12; j++) {
+        if (i < 0 || j < 0 || i >= N || j >= N) continue;
+        if (i + j <= i0 + j0) continue;
+        const lat = (i - j) - (i0 - j0);
+        if (lat < -4 || lat > 4) continue;
+        const s = b.surfD[j * N + i];
+        if (s <= sA) continue;
+        const cx = this.originX + (i - j) * HW;
+        const ty = this.originY + (i + j) * HH - s * VH;
+        if (ty - HH > it.sy || ty + 40 < top) continue;   // doesn't rise in front of this animal
+        polys.push([cx, ty]);
+      }
+    }
+    if (!polys.length) return;
+    ctx.save();
+    ctx.beginPath();
+    for (const [cx, ty] of polys) {
+      ctx.moveTo(cx - HW, ty); ctx.lineTo(cx, ty - HH); ctx.lineTo(cx + HW, ty);
+      ctx.lineTo(cx + HW, ty + 60); ctx.lineTo(cx - HW, ty + 60); ctx.closePath();
+    }
+    ctx.clip();
+    this.drawTerrain(ctx);
+    ctx.restore();
   }
 
   groundColor(w, k, grassC, x, y) {
@@ -230,6 +360,7 @@ export class Renderer {
     ctx.lineTo(cx - HW - E, ty);
     ctx.closePath();
     ctx.fill();
+    if (this.fine > 0.02) this.drawTopDetail(ctx, w, k, x, y, cx, ty, top, hasWater, this.fine, yf);
 
     if (!hasWater || !wtop[d]) {
       if (w.reed[k] > 0.25) this.drawReeds(ctx, w, k, cx, ty, x, y, yf);
@@ -238,8 +369,56 @@ export class Renderer {
     } else if (w.reed[k] > 0.4 && wd < 0.8) this.drawReeds(ctx, w, k, cx, ty, x, y, yf);
   }
 
+  // Close-up texture on a block top: a 3x3 pattern, grass tufts, flowers, pebbles.
+  drawTopDetail(ctx, w, k, x, y, cx, ty, top, water, fine, yf) {
+    const sw = HW / 3, sh = HH / 3;
+    ctx.globalAlpha = fine * (water ? 0.35 : 0.9);
+    for (let a = 0; a < 3; a++) for (let b = 0; b < 3; b++) {
+      const v = hash2(x * 3 + a, y * 3 + b, 71);
+      if (v > 0.35 && v < 0.65) continue;                     // leave the base colour showing
+      const px = cx + (a - b) * sw, py = ty - HH + sh + (a + b) * sh;
+      ctx.fillStyle = rgb(shade(top, 1 + (v - 0.5) * (water ? 0.06 : 0.16)));
+      ctx.beginPath();
+      ctx.moveTo(px, py - sh); ctx.lineTo(px + sw, py); ctx.lineTo(px, py + sh); ctx.lineTo(px - sw, py);
+      ctx.closePath(); ctx.fill();
+    }
+    ctx.globalAlpha = fine;
+    if (!water && w.snow[k] < 0.01) {
+      const g = w.grass[k];
+      if (g > 0.35) {
+        ctx.lineWidth = 0.28;
+        const blades = 2 + Math.round(g * 4);
+        for (let n = 0; n < blades; n++) {
+          const ox = (hash2(x * 5 + n, y, 81) - 0.5) * TW * 0.7, oy = (hash2(x, y * 5 + n, 83) - 0.5) * TH * 0.6;
+          const h = 1 + hash2(n, x, y + 3) * 1.4, lean = (hash2(y, n, x) - 0.5) * 0.8;
+          ctx.strokeStyle = rgb(shade(top, n % 2 ? 0.78 : 1.12));
+          ctx.beginPath(); ctx.moveTo(cx + ox, ty + oy); ctx.lineTo(cx + ox + lean, ty + oy - h); ctx.stroke();
+        }
+        // Wildflowers in spring and summer.
+        if (yf > 0.03 && yf < 0.55 && g > 0.5 && hash2(x, y, 91) < 0.3) {
+          const cols = [[242, 214, 92], [248, 246, 238], [234, 162, 192], [156, 174, 232]];
+          for (let n = 0; n < 1 + Math.floor(hash2(y, x, 93) * 3); n++) {
+            ctx.fillStyle = rgb(cols[Math.floor(hash2(x + n, y, 95) * 4)]);
+            const ox = (hash2(x * 7 + n, y, 97) - 0.5) * TW * 0.6, oy = (hash2(x, y * 7 + n, 99) - 0.5) * TH * 0.5;
+            ctx.fillRect(cx + ox - 0.35, ty + oy - 1.4, 0.7, 0.7);
+          }
+        }
+      }
+      const mat = w.material[k];
+      if ((mat === MAT.GRAVEL || mat === MAT.SAND || mat === MAT.ROCK) && g < 0.5) {
+        for (let n = 0; n < 3; n++) {
+          ctx.fillStyle = rgb(shade(top, 0.7 + hash2(n, x, y) * 0.5));
+          const ox = (hash2(x * 11 + n, y, 101) - 0.5) * TW * 0.6, oy = (hash2(x, y * 11 + n, 103) - 0.5) * TH * 0.5;
+          ctx.fillRect(cx + ox, ty + oy, 0.7, 0.45);
+        }
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+
   drawSide(ctx, cx, baseY, from, to, gr, body, ground, w, k, left, haze, x, y, edge) {
     const lightK = left ? LEFT : RIGHT;
+    const fine = this.fine;
     const seg = (a, b, c) => {
       const ya = baseY - a * VH, yb = baseY - b * VH;
       ctx.fillStyle = rgb(mix(shade(c, lightK), COL.haze, haze));
@@ -251,6 +430,22 @@ export class Renderer {
       }
       ctx.closePath();
       ctx.fill();
+      if (fine > 0.05) {
+        // Close-up: a few flecks per band so cliffs read as stone and soil, not flat paint.
+        ctx.globalAlpha = fine * 0.7;
+        const bands = Math.max(1, Math.round(a - b));
+        for (let q = 0; q < 3 * bands; q++) {
+          const u = hash2(x * 13 + q, y + (left ? 0 : 50), 107), v = hash2(y * 13 + q, x, 109);
+          ctx.fillStyle = rgb(mix(shade(c, lightK * (v > 0.5 ? 0.82 : 1.12)), COL.haze, haze));
+          const px = left ? cx - HW + u * HW * 0.8 : cx + u * HW * 0.8;
+          const py = (left ? ya + u * HH : ya + HH - u * HH) + v * (yb - ya) * 0.85;
+          ctx.beginPath();
+          ctx.moveTo(px, py); ctx.lineTo(px + HW * 0.22, py + (left ? 1 : -1) * HH * 0.22);
+          ctx.lineTo(px + HW * 0.22, py + (left ? 1 : -1) * HH * 0.22 + 0.9); ctx.lineTo(px, py + 0.9);
+          ctx.closePath(); ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+      }
     };
     let level = from;
     if (body && from > gr) {
@@ -273,8 +468,8 @@ export class Renderer {
       else {
         c = ((level + (edge ? 0 : 1)) & 1) ? COL.sideRock : COL.sideRock2;
         c = mix(c, mat, 0.2);
-        // merge consecutive rock bands when not on the diorama edge
-        if (!edge) { next = to; }
+        // merge consecutive rock bands when not on the diorama edge (unless drawing close-up)
+        if (!edge && fine < 0.3) { next = to; }
       }
       if (level <= 0 && edge) c = shade(COL.sideRock, 0.82);
       seg(level, Math.max(next, to), shade(c, 1 + (hash2(x, level, 17) - 0.5) * 0.05));
@@ -414,11 +609,13 @@ export class Renderer {
     let cx = cam.x + cam.panX, cy = cam.y + cam.panY;
     if (this.drift && this.follow < 0) { cx += Math.sin(this.time * 0.021) * 6; cy += Math.cos(this.time * 0.017) * 3; }
     this.view = { z, cx, cy, W, H };
+    this.updateDetail(this.view, this.detailJobGen ? 7 : 4);
     const toScreen = () => this.sctx.setTransform(z, 0, 0, z, W / 2 - cx * z, H / 2 - cy * z);
 
     // Sky
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    const [skyTop, skyBot] = skyColors(c.elev, c.cloud);
+    const moonSky = c.moonIllum * Math.max(0, c.moonElev) * (1 - c.cloud * 0.8);
+    const [skyTop, skyBot] = skyColors(c.elev, c.cloud, moonSky);
     const grad = ctx.createLinearGradient(0, 0, 0, H);
     grad.addColorStop(0, rgb(skyTop));
     grad.addColorStop(1, rgb(skyBot));
@@ -427,10 +624,18 @@ export class Renderer {
     const night = clamp((-c.elev - 0.03) * 6, 0, 1) * (1 - c.cloud * 0.9);
     if (night > 0.01) {
       for (const s of this.stars) {
-        const a = night * (0.5 + 0.5 * Math.sin(this.time * 0.8 + s.p));
+        const a = night * (1 - 0.6 * moonSky) * (0.5 + 0.5 * Math.sin(this.time * 0.8 + s.p));
         ctx.fillStyle = `rgba(240,240,255,${a * 0.8})`;
         ctx.fillRect(s.x * W, s.y * H, s.s * dpr, s.s * dpr);
       }
+    }
+
+    // The moon, in its phase, crossing the sky.
+    if (c.moonElev > 0 && c.moonIllum > 0.03) {
+      const t = clamp(((w.minute % 1440) / 60 - (6 + c.moonPhase * 24) % 24 + 24) % 24 / 12.4, 0, 1);
+      const mx = W * (0.12 + 0.76 * t), my = H * (0.42 - 0.32 * Math.sin(Math.PI * t));
+      const vis = (1 - c.cloud * 0.85) * (0.35 + 0.65 * clamp((-c.elev + 0.1) * 5, 0, 1));
+      this.drawMoon(ctx, mx, my, 16 * dpr, c.moonPhase, vis);
     }
 
     // Soft shadow under the diorama
@@ -453,20 +658,21 @@ export class Renderer {
     sctx.clearRect(0, 0, W, H);
     toScreen();
     sctx.imageSmoothingEnabled = true;
-    sctx.drawImage(this.front.canvas, 0, 0, this.worldW, this.worldH);
+    this.drawTerrain(sctx);
     this.updateParticles(dt);
     this.drawWaterLife(sctx, dt);
     drawSchools(this, sctx, this.alpha, this.time);
     drawCreatures(this, sctx, this.alpha, this.time);
+    this.occlude(sctx);
     this.drawCloudShadows(sctx, dt);
 
     sctx.setTransform(1, 0, 0, 1, 0, 0);
     sctx.globalCompositeOperation = 'multiply';
-    sctx.fillStyle = rgb(lightTint(c.elev, c.cloud));
+    sctx.fillStyle = rgb(lightTint(c.elev, c.cloud, c.moonLight));
     sctx.fillRect(0, 0, W, H);
     sctx.globalCompositeOperation = 'destination-in';
     toScreen();
-    sctx.drawImage(this.front.canvas, 0, 0, this.worldW, this.worldH);
+    this.drawTerrain(sctx);
     sctx.globalCompositeOperation = 'source-over';
     ctx.drawImage(this.scene, 0, 0);
 
@@ -496,6 +702,32 @@ export class Renderer {
     ctx.fillRect(0, 0, W, H);
   }
 
+  drawMoon(ctx, x, y, r, phase, alpha) {
+    if (alpha <= 0.01) return;
+    const glow = ctx.createRadialGradient(x, y, r * 0.8, x, y, r * 4);
+    glow.addColorStop(0, `rgba(230,236,255,${0.18 * alpha * (1 - Math.cos(2 * Math.PI * phase)) / 2})`);
+    glow.addColorStop(1, 'rgba(230,236,255,0)');
+    ctx.fillStyle = glow;
+    ctx.fillRect(x - r * 4, y - r * 4, r * 8, r * 8);
+    // Faint dark disc, then the lit part bounded by the limb and the terminator.
+    ctx.fillStyle = `rgba(60,70,95,${0.25 * alpha})`;
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+    const side = phase < 0.5 ? 1 : -1;
+    const k = Math.cos(2 * Math.PI * phase);
+    ctx.fillStyle = `rgba(246,243,228,${alpha})`;
+    ctx.beginPath();
+    for (let n = 0; n <= 24; n++) {
+      const a = -Math.PI / 2 + Math.PI * n / 24;
+      const px = x + side * r * Math.cos(a), py = y + r * Math.sin(a);
+      if (n === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    for (let n = 24; n >= 0; n--) {
+      const a = -Math.PI / 2 + Math.PI * n / 24;
+      ctx.lineTo(x + side * k * r * Math.cos(a), y + r * Math.sin(a));
+    }
+    ctx.fill();
+  }
+
   updateParticles(dt) {
     for (const key in this.particles) {
       const arr = this.particles[key];
@@ -513,7 +745,7 @@ export class Renderer {
 
   drawWaterLife(ctx, dt) {
     const w = this.world, c = w.climate, b = this.front, P = this.particles;
-    const day = clamp(c.sun * 2 + 0.15, 0.15, 1);
+    const day = Math.max(clamp(c.sun * 2 + 0.15, 0.15, 1), c.moonLight * 0.7);
     // Sun glints
     if (b.water.length) {
       let n = dt * 30 * day * (1 - c.cloud * 0.7);
@@ -634,7 +866,7 @@ export class Renderer {
       const k = w.hotSpring;
       P.push({ x: b.sx[k] + (Math.random() - 0.5) * 4, y: b.sy[k], t: 0, life: 4, r: 1.2 });
     }
-    const tint = lightTint(c.elev, c.cloud);
+    const tint = lightTint(c.elev, c.cloud, c.moonLight);
     for (const p of P) {
       const f = p.t / p.life;
       const x = p.x + c.windX * 4 * p.t + Math.sin(p.t * 1.3 + p.x) * 1.2;
@@ -685,7 +917,7 @@ export class Renderer {
 
   drawFog(ctx, c, W, H) {
     if (c.fog < 0.02) return;
-    const tint = lightTint(c.elev, 0.5);
+    const tint = lightTint(c.elev, 0.5, c.moonLight);
     const col = [232 * tint[0] / 255, 236 * tint[1] / 255, 238 * tint[2] / 255];
     for (let k = 0; k < 4; k++) {
       const y = H * (0.35 + k * 0.17) + Math.sin(this.time * 0.05 + k) * 20;

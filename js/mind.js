@@ -11,42 +11,42 @@ import { N, MIN_PER_DAY, SEASON_NAMES } from './config.js';
 import { clamp } from './rng.js';
 
 const MAX_THOUGHTS = 8;
-const RECENT = 18;
+const RECENT = 30;
 
 // ---------- voices ----------
 
 const VOICE = {
   otter: {
-    sound: ['eep!', 'chirp chirp', 'squee', 'mmm', 'wheee', 'hehe', 'brrbl', 'eek'],
-    food: ['fish', 'fishies', 'crunchy fish', 'wiggly fish', 'slippy fish', 'fishy snacks'],
+    sound: ['eep!', 'chirp chirp', 'squee', 'mmm', 'wheee', 'hehe', 'brrbl', 'eek', 'squeak!', 'hehehe', 'blub'],
+    food: ['fish', 'fishies', 'crunchy fish', 'wiggly fish', 'slippy fish', 'fishy snacks', 'crayfish', 'silver fishy', 'froggy'],
     body: ['paws', 'whiskers', 'belly', 'tail', 'toes', 'fur'],
     kinword: ['pups', 'family', 'otter pals', 'the gang'],
     skill: 'fishing',
   },
   deer: {
-    sound: ['mm.', 'snf.', '...', 'hm.', 'mmh.'],
-    food: ['grass', 'green bits', 'soft leafs', 'tender shoots', 'clover'],
+    sound: ['mm.', 'snf.', '...', 'hm.', 'mmh.', 'huff.', 'snort.'],
+    food: ['grass', 'green bits', 'soft leafs', 'tender shoots', 'clover', 'acorns', 'twigs', 'buds'],
     body: ['ears', 'hooves', 'nose', 'legs', 'tail'],
     kinword: ['fawn', 'herd', 'family'],
     skill: 'finding food',
   },
   rabbit: {
-    sound: ['thump!', 'twitch.', 'sniff sniff', 'eep.', 'nose wiggle.'],
-    food: ['clover', 'grass', 'green', 'yummy stalks', 'sweet shoots'],
+    sound: ['thump!', 'twitch.', 'sniff sniff', 'eep.', 'nose wiggle.', 'ear flick.', 'hop!'],
+    food: ['clover', 'grass', 'green', 'yummy stalks', 'sweet shoots', 'dandelion', 'bark bits'],
     body: ['ears', 'feet', 'nose', 'whiskers', 'fluff'],
     kinword: ['babies', 'warren', 'hoppers'],
     skill: 'finding clover',
   },
   fox: {
-    sound: ['heh.', 'hmm.', 'sniff sniff', 'yip!', 'hehe.'],
-    food: ['mousies', 'squeakers', 'crunchy mice', 'snacks', 'hare'],
+    sound: ['heh.', 'hmm.', 'sniff sniff', 'yip!', 'hehe.', 'yawp.', 'snrk.'],
+    food: ['mousies', 'squeakers', 'crunchy mice', 'snacks', 'hare', 'berries', 'beetles'],
     body: ['paws', 'nose', 'tail', 'ears', 'fluffy tail'],
     kinword: ['kits', 'family'],
     skill: 'hunting',
   },
   heron: {
-    sound: ['...', 'patience.', 'still.', 'hm.', 'krraak.'],
-    food: ['froggies', 'little fish', 'slippy things', 'fish', 'silver ones'],
+    sound: ['...', 'patience.', 'still.', 'hm.', 'krraak.', 'ahem.'],
+    food: ['froggies', 'little fish', 'slippy things', 'fish', 'silver ones', 'newts', 'tadpoles'],
     body: ['legs', 'neck', 'beak', 'feathers', 'toes'],
     kinword: ['chicks', 'kin'],
     skill: 'fishing',
@@ -155,7 +155,135 @@ const SPECIAL = {
   },
 };
 
-const POSITIVE = new Set(['eat', 'full', 'catch', 'play', 'friend', 'mom', 'kid', 'wake', 'explore', 'discover', 'safe', 'healed', 'fightWin', 'born', 'learn', 'beliefSkill', 'beliefPlace', 'musing']);
+// A second, larger helping of lines, merged into the ones above.
+const MORE = {
+  hungry: ['tummy talking again.', 'when last {food}? too long.', 'smell {food}? no. sad nose.', 'hungry hungry hungry.', 'need snack. big snack.',
+    'belly empty like old nest.', 'every thought is {food}.', 'hunt now. nap later.', '{body} weak. need {food}.', 'thinking of {place}. {food} there?',
+    'grumble grumble. belly.', 'one {food}. just one. please.', 'stomach make noise. embarrassing.', 'go find {food}. go go.'],
+  eat: ['yum yum yum.', 'oh this is the good {food}.', '{food} for {me}. all mine.', 'crunchy. perfect.', 'slow chew. happy chew.',
+    'mm. tastes like {season}.', 'little bit more {food}.', 'eat now, think later.', 'this {food} extra good.', 'nom. nom. nom.',
+    'good spot. good {food}.', 'eat with eyes open. careful.'],
+  full: ['full full full.', 'belly happy now.', 'ate too much. worth it.', 'so full. lie down soon.', 'no room for more {food}.',
+    'heavy belly. slow walk.', 'good dinner. {sound}', 'tummy round like stone.'],
+  catch: ['caught it! clever {me}!', 'whoosh. got. {sound}', 'gotcha {prey}!', 'quick {body}, quick catch.', 'that one was fast. me faster.',
+    'yes! {prey} for dinner.', 'did it! did it!', 'skill. pure skill.', 'snap! {sound}', 'easy. {hedge} easy.'],
+  miss: ['ugh, missed.', '{prey} too wiggly.', 'next one. for sure.', 'so close. so close.', 'paws too slow today.',
+    'oops.', '{prey} laughed at me. maybe.', 'missed again? hmm.', 'try different way.', 'patience. try again.'],
+  missAngry: ['GRR. stupid {prey}.', 'nothing works today.', 'missed {count} times. not fair.', 'give up? no. ...maybe.', 'all {prey} are mean.',
+    'world against me today.', '{prey} cheating somehow.'],
+  scared: ['what was that?!', 'freeze. listen.', 'bad smell. {pred} smell.', 'eyes on me. feel it.', '{pred} too close. too close.',
+    'heart thump thump.', 'hide. hide now.', 'be small. be quiet.', '{pred}!! not again.', 'something moving. big.', 'danger danger.'],
+  fire: ['smoke in nose. bad.', 'trees on fire?! go!', 'too hot, too bright. run.', 'fire eats everything. away!'],
+  flee: ['run run run!', 'fast fast fast!', 'not stopping!', 'zoom zoom!', 'legs go!', 'away from {pred}!', 'hop hop HOP!', 'escape!'],
+  safe: ['safe now. shaking a bit.', 'phew phew phew.', 'made it.', 'heart slow down now.', 'ok. ok. breathe.', 'lost them. good.',
+    'quiet again. good quiet.', '{pred} gone. me still here.'],
+  alarm: ['someone run! me too!', 'others scared. must be bad.', 'follow herd!', 'why run? no time. run!', 'ears say danger.'],
+  hurt: ['ouch ouch ouch.', '{body} stings.', 'limp limp.', 'hurts to walk.', 'need rest. need heal.', 'ow. never again.', 'that hurt. remember that.'],
+  healed: ['feel better!', '{body} works again.', 'strong again. {sound}', 'all healed. ready.'],
+  fightWin: ['ha! go away!', 'scared off {pred}!', 'me brave!', '{pred} ran. me win.', 'nobody hurts {kinword}.', 'big kick. good kick.'],
+  fightLose: ['ouch. bad fight.', '{pred} won. ow.', 'next time run instead.'],
+  defend: ['get away from {kin}!', 'not my babies!', 'back off {pred}!', 'me fight for {kin}!', 'stand between. stay strong.'],
+  skipHunt: ['too risky. nope.', 'not worth a kick in the face.', 'wait for better chance.', 'patience. {prey} alone later maybe.', 'mama {guard} watching. no.'],
+  hunt: ['stalk. stalk. now!', 'quiet paws... closer...', 'that one. slow one.', 'chase time!', 'ears forward. eyes on {prey}.'],
+  tired: ['eyelids heavy.', 'need sleep soon.', 'yawn yawn.', 'legs tired. {body} tired.', 'so so sleepy.', 'nap would be nice.'],
+  sleep: ['zzzz...', 'snore.', 'comfy. comfy.', 'tuck {body} in. sleep.', 'dream of {place}.', 'sleep safe, {kin}.', 'curl tight. warm.', 'zz... {sound}... zz'],
+  wake: ['good morning world.', 'up! what smells new?', 'stretchhh.', 'awake. hungry? yes.', 'rise and shine.', 'new day. new {food}?'],
+  lonely: ['anyone here?', 'want company.', 'miss friends.', 'alone too long.', 'where everybody go?', 'sit alone. not fun.'],
+  friend: ['hi {kin}!', 'together is better.', 'friend smell. good.', '{kin} here. happy.', 'nose boop {kin}.', 'stay close, {kin}.'],
+  mom: ['mama warm.', 'follow mama.', 'mama knows where {food}.', 'mama! wait for me!', 'safe near mama.'],
+  learn: ['ooh. try that.', 'watch close. learn.', 'so THAT is the trick.', 'one day me do that too.'],
+  kid: ['count babies. all here.', 'little ones hungry again.', 'stay close, little {kinword}.', 'proud of {kin}.'],
+  born: ['tiny ones arrived!', 'new family!', 'babies sleep. mama tired.'],
+  bored: ['so bored.', 'nothing to do.', 'want adventure.', 'same old {place}.', 'yawn. not tired. bored.', 'chase something? anything?'],
+  explore: ['what is over that hill?', 'follow nose.', 'go where never gone.', 'new smells this way.', 'explore explore.', 'curious about far place.'],
+  discover: ['ooh, {newplace}!', 'remember: {newplace}.', 'new spot. call it {newplace}.', '{newplace}. good place maybe.'],
+  play: ['so fun!', 'again again!', 'catch me!', 'bounce bounce.', 'play is best.', 'zoomies!', 'tumble tumble.', 'chase the leaf!'],
+  cold: ['brrr.', 'cold {body}.', 'want sun.', 'shiver shiver.', 'fluff up. stay warm.', 'winter bites.'],
+  hot: ['so hot.', 'need shade. now.', 'too sunny.', 'panting.', 'water please.'],
+  rain: ['wet again.', 'rain rain.', 'drippy {body}.', 'puddles everywhere.', 'rain smell nice though.'],
+  snow: ['snow crunchy.', 'white everywhere.', 'cold paws in snow.', 'snow taste like nothing.'],
+  storm: ['big noise in sky!', 'flash! boom!', 'scary loud.', 'stay hidden till quiet.'],
+  night: ['dark now.', 'stars out.', 'night noises.', 'quiet dark.', 'owl hoot somewhere.'],
+  grief: ['where {kin} go?', 'still miss {kin}.', 'quiet without {kin}.', 'think of {kin} today.'],
+  season: ['{season}! things change.', 'feel {season} in air.', 'new season. new smells.', '{season} again. round and round.'],
+  beliefPred: ['{pred} always trouble.', 'never trust {pred}.', '{pred} near = run. {hedge}.'],
+  beliefPrey: ['{prey} clever lately.', 'know how to catch {prey} now. {hedge}.', '{prey}? {hedge} tasty.'],
+  beliefPlace: ['{place} is best place.', 'go back to {place}. {hedge}.', '{place} never let me down.'],
+  beliefSkill: ['pretty good at {skill}.', 'practice makes good {skill}.', 'remember when bad at {skill}? not now.'],
+  musing: ['where wind come from?', 'why sky blue?', 'what is up there?', 'clouds move. me move.', 'rain from where?',
+    'big world. small me.', 'flowers smell like sun.', 'why moon change shape?', 'does {nick} think too?', 'the river never sleeps.',
+    'stones are slow animals?', 'what is beyond the hills?'],
+  shelter: ['rain. stay under trees.', 'wait for rain to stop.', 'keep dry. keep warm.', 'hide from rain. cozy.', 'drip drip. stay put.',
+    'wet {body} no good. shelter.'],
+  lieLow: ['nothing to do. lie here.', 'save energy. rest.', 'belly full. just lie.', 'lazy time.', 'rest {body}. watch world.',
+    'no rush. lie low.', 'sun nice. lie still.', 'doing nothing. very good.', 'conserve. conserve.', 'just breathing. nice.'],
+  moonBright: ['moon so bright. too bright.', 'big moon. everyone can see me.', 'stay hidden. moon watching.', 'bright night. hunters out.',
+    'moon makes shadows. careful.', 'full moon. stay close to cover.'],
+  moonDark: ['no moon. so dark.', 'dark dark night. good for hiding.', 'can not see paws.', 'black night. listen hard.', 'moon gone. where?'],
+};
+for (const k in MORE) GENERAL[k] = (GENERAL[k] || []).concat(MORE[k]);
+
+const SPECIAL_MORE = {
+  otter: {
+    hungry: ['fishy fishy where are you?', 'dive deep. find snack.', 'crayfish under rock? check.'],
+    catch: ['fish! FISH! {sound}', 'got wiggly one!', 'flip, dive, GOT.'],
+    play: ['float and spin!', 'mud slide time!', 'hold pebble on belly. best.', 'splash {kin}! hehe.'],
+    sleep: ['float in raft with friends.', 'wrap in kelp. no drift.'],
+    lieLow: ['float on back. do nothing.', 'belly up in sun.'],
+    friend: ['hold paws with {kin}.', 'otter pile!'],
+    musing: ['why fish so slippy?', 'river goes where? follow someday.'],
+  },
+  deer: {
+    eat: ['soft leaves. careful ears.', 'nibble twig. crunch.'],
+    scared: ['tail up. flag warning.', 'snort! danger!'],
+    lieLow: ['lie in long grass. chew cud.', 'ears turning. resting.'],
+    moonBright: ['moon bright. stay in trees.'],
+    musing: ['grass always greener there.', 'trees talk in wind?'],
+  },
+  rabbit: {
+    eat: ['nibble. look. nibble. look.', 'clover clover clover.'],
+    scared: ['FREEZE. do not move.', 'thump warning! thump!'],
+    flee: ['zigzag! zigzag!', 'burrow burrow burrow!'],
+    lieLow: ['tuck in form. invisible.', 'flat ears. lie still.'],
+    moonBright: ['too much moon. stay in burrow.', 'moon shows my white tail. hide.'],
+    moonDark: ['dark. safe to nibble. maybe.'],
+  },
+  fox: {
+    hungry: ['listen... rustle... mouse!', 'nose to ground. sniff sniff.'],
+    hunt: ['sneak like shadow.', 'pounce position. wait...'],
+    catch: ['crunchy treat, heh.', 'too easy.'],
+    lieLow: ['curl tail around nose. rest.', 'nap in den. sly nap.'],
+    moonBright: ['moonlight. easy to spot snacks.', 'bright night. good hunting.'],
+    moonDark: ['dark night. ears do the work.'],
+    musing: ['why hares so jumpy?', 'everyone runs from fox. rude.'],
+  },
+  heron: {
+    hungry: ['the shallows will provide.', 'one fish. then rest.'],
+    catch: ['the beak is swift.', 'gulp. done.'],
+    lieLow: ['stand on one leg. think.', 'still as a reed.'],
+    moonBright: ['moon on water. fish visible.', 'night fishing. rare.'],
+    musing: ['water is a mirror. me twice.', 'patience is a fish.'],
+  },
+};
+for (const sp in SPECIAL_MORE) {
+  SPECIAL[sp] = SPECIAL[sp] || {};
+  for (const k in SPECIAL_MORE[sp]) SPECIAL[sp][k] = (SPECIAL[sp][k] || []).concat(SPECIAL_MORE[sp][k]);
+}
+
+// Optional endings that tie a thought to the moment.
+const TAILS = {
+  time: ['{time} now.', 'and it is {time}.'],
+  rain: ['rain on {body} too.', 'and wet.'],
+  snow: ['snow everywhere.', 'cold {body}.'],
+  night: ['so dark.', 'stars watching.'],
+  moon: ['moon watching.', 'moon so bright.'],
+  hot: ['so hot today.'],
+  cold: ['brr, cold.'],
+  happy: ['{sound}', 'life good.'],
+  sad: ['sigh.', '...'],
+};
+
+const POSITIVE = new Set(['eat', 'full', 'catch', 'play', 'friend', 'mom', 'kid', 'wake', 'explore', 'discover', 'safe', 'healed', 'fightWin', 'born', 'learn', 'beliefSkill', 'beliefPlace', 'musing', 'lieLow']);
 
 const MOOD_PREFIX = {
   happy: ['{sound} ', '', '', 'yay. '],
@@ -316,6 +444,18 @@ export function think(w, a, topic, ctx = {}, importance = 1) {
     const c = pick(rng, choices);
     key = c.key;
     text = c.t.replace(/\{(\w+)\}/g, (_, s) => (slots[s] ? slots[s]() : s));
+    // Sometimes tie it to the moment: weather, night, mood.
+    if (rng.chance(0.22) && text.length < 40) {
+      const cl = w.climate;
+      const opts = ['time'];
+      if (cl.precip > 0) opts.push(cl.temp < 0.5 ? 'snow' : 'rain');
+      if (cl.elev < -0.05) opts.push(cl.moonLight > 0.5 ? 'moon' : 'night');
+      if (cl.temp > 26) opts.push('hot'); else if (cl.temp < -2) opts.push('cold');
+      if (POSITIVE.has(topic) && m.happy > 0.6) opts.push('happy');
+      if (m.grief > 0.3 || m.happy < 0.3) opts.push('sad');
+      const tail = pick(rng, TAILS[pick(rng, opts)]).replace(/\{(\w+)\}/g, (_, s) => (slots[s] ? slots[s]() : s));
+      if (!text.includes(tail)) text = text.replace(/\s*$/, '') + ' ' + tail;
+    }
     let moodKey = m.grief > 0.4 ? 'grief' : m.frustrated > 0.5 ? 'frustrated' : a.fear > 0.4 ? 'scared' : m.bored > 0.6 ? 'bored' : m.happy > 0.7 ? 'happy' : null;
     // Only colour a thought with a mood that fits it.
     if (moodKey === 'happy' && !POSITIVE.has(topic)) moodKey = null;
@@ -354,7 +494,12 @@ export function idleThought(w, a) {
   if (temp > 25) opts.push(['hot', {}]);
   if (c.weather === 'storm') opts.push(['storm', {}]);
   else if (c.precip > 0) opts.push([temp < 0.5 ? 'snow' : 'rain', {}]);
-  if (c.elev < -0.05 && rng.chance(0.4)) opts.push(['night', {}]);
+  if (c.elev < -0.05) {
+    if (c.moonLight > 0.5) opts.push(['moonBright', {}]);
+    else if (c.moonLight < 0.08 && c.cloud < 0.5) opts.push(['moonDark', {}]);
+    else if (rng.chance(0.4)) opts.push(['night', {}]);
+  }
+  if (a.pose === 'rest') opts.push([c.precip > 0 ? 'shelter' : 'lieLow', {}]);
   // Speak a belief.
   const keys = Object.keys(m.b);
   if (keys.length && rng.chance(0.5)) {

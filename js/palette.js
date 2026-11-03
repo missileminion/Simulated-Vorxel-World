@@ -79,7 +79,7 @@ export function leafState(yearFrac, h) {
   return { density: clamp(density, 0, 1), col };
 }
 
-export function skyColors(elev, cloud) {
+export function skyColors(elev, cloud, moon = 0) {
   const day = [[156, 190, 208], [226, 234, 226]];
   const gold = [[128, 150, 188], [246, 208, 172]];
   const dusk = [[70, 74, 120], [176, 138, 150]];
@@ -90,6 +90,7 @@ export function skyColors(elev, cloud) {
   else if (elev > -0.05) { const t = (elev + 0.05) / 0.1; top = mix(dusk[0], gold[0], t); bot = mix(dusk[1], gold[1], t); }
   else if (elev > -0.2) { const t = (elev + 0.2) / 0.15; top = mix(night[0], dusk[0], t); bot = mix(night[1], dusk[1], t); }
   else { top = night[0]; bot = night[1]; }
+  if (moon > 0 && elev < 0.05) { top = mix(top, [44, 56, 92], moon * 0.8); bot = mix(bot, [78, 92, 128], moon * 0.8); }
   const light = clamp(elev * 4 + 0.5, 0, 1);
   const grey = [[168, 176, 182], [204, 208, 206]];
   top = mix(top, shade(grey[0], 0.4 + 0.6 * light), cloud * 0.7);
@@ -97,7 +98,7 @@ export function skyColors(elev, cloud) {
   return [top, bot];
 }
 
-export function lightTint(elev, cloud) {
+export function lightTint(elev, cloud, moon = 0) {
   const dayC = [255, 252, 246], gold = [255, 214, 176], dusk = [196, 156, 182], night = [78, 94, 146];
   let c;
   if (elev > 0.25) c = dayC;
@@ -105,6 +106,8 @@ export function lightTint(elev, cloud) {
   else if (elev > -0.04) c = mix(dusk, gold, (elev + 0.04) / 0.1);
   else if (elev > -0.2) c = mix(night, dusk, (elev + 0.2) / 0.16);
   else c = night;
+  // Moonlight: a silvery lift on bright nights.
+  if (moon > 0 && elev < 0.06) c = mix(c, [150, 164, 205], moon * 0.75 * clamp((0.06 - elev) * 6, 0, 1));
   const grey = [(c[0] + c[1] + c[2]) / 3 * 0.9, (c[0] + c[1] + c[2]) / 3 * 0.92, (c[0] + c[1] + c[2]) / 3 * 0.95];
   return mix(c, grey, cloud * 0.55);
 }

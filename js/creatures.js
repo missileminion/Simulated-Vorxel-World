@@ -387,6 +387,7 @@ export function drawCreatures(r, ctx, alpha, time) {
     const scale = E * (young ? 0.62 : 1);
     const inWater = w.water[k] > 0.25 && !w.ice[k];
     let pose = a.pose;
+    if (pose === 'rest') pose = a.sp === 'heron' ? 'idle' : a.sp === 'otter' && !inWater ? 'groom' : 'sleep';
     if (a.sp === 'otter' && inWater) pose = pose === 'sleep' ? 'float' : pose === 'dive' ? 'dive' : 'swim';
     const lift = a.flying ? 14 : 0;
     const len = LENGTH[a.sp] * PPM * scale;
@@ -439,8 +440,11 @@ export function drawBubbles(r, ctx) {
   const w = r.world, view = r.view;
   const zCss = view.z / r.dpr;
   const ppm = PPM * E * zCss;
-  const show = smoothstep(8, 12, ppm);
-  if (show <= 0.01) return;
+  // Zoomed out: a couple of fresh thoughts at a time. Zoomed in: more, and longer-lived.
+  const close = smoothstep(8, 12, ppm);
+  const maxBubbles = close > 0.5 ? 4 : 2;
+  const freshFor = close > 0.5 ? 45 : 25;
+  const show = 1;
   const toScreen = (x, y) => [(x - view.cx) * view.z + view.W / 2, (y - view.cy) * view.z + view.H / 2];
   const now = w.minute;
   // The selected animal, plus a couple of others near the middle with something fresh on their mind.
@@ -451,7 +455,7 @@ export function drawBubbles(r, ctx) {
     if (!th) continue;
     const age = now - th.t;
     const sel = r.selected === it.a.id;
-    if (age > (sel ? 120 : 45)) continue;
+    if (age > (sel ? 120 : freshFor)) continue;
     const [px, py] = toScreen(it.sx, it.headY);
     if (px < 0 || py < 0 || px > view.W || py > view.H) continue;
     const dc = Math.hypot(px - view.W / 2, py - view.H / 2);
@@ -459,17 +463,18 @@ export function drawBubbles(r, ctx) {
   }
   cands.sort((p, q) => p.score - q.score);
   const dpr = r.dpr;
-  ctx.font = `${12 * dpr}px ui-rounded, system-ui, sans-serif`;
+  const fs = close > 0.5 ? 12 : 11;
+  ctx.font = `${fs * dpr}px ui-rounded, system-ui, sans-serif`;
   ctx.textBaseline = 'middle';
   const placed = [];
-  for (const c of cands.slice(0, 4)) {
+  for (const c of cands.slice(0, maxBubbles)) {
     const text = c.th.text;
     const tw = Math.min(ctx.measureText(text).width, 230 * dpr);
-    const bw = tw + 16 * dpr, bh = 24 * dpr;
+    const bw = tw + 16 * dpr, bh = (fs + 12) * dpr;
     const bx = c.px - bw / 2, by = c.py - bh - 10 * dpr;
     if (placed.some(p => Math.abs(p.x - bx) < bw && Math.abs(p.y - by) < bh)) continue;
     placed.push({ x: bx, y: by });
-    const fade = clamp(((c.sel ? 120 : 45) - c.age) / 10, 0, 1);   // fade out over the last few minutes
+    const fade = clamp(((c.sel ? 120 : freshFor) - c.age) / 8, 0, 1);   // fade out over the last few minutes
     ctx.globalAlpha = show * fade * (c.sel ? 1 : 0.85);
     ctx.fillStyle = 'rgba(252,250,244,0.92)';
     ctx.strokeStyle = 'rgba(38,49,58,0.15)';

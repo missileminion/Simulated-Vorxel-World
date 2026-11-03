@@ -5,7 +5,7 @@ import { World } from './world.js';
 import { Renderer } from './render.js';
 import * as store from './store.js';
 import { GAME_MIN_PER_REAL_SEC, SPEEDS, EXACT_CATCHUP_MIN, MAX_CATCHUP_DAYS, MIN_PER_DAY, SEASON_NAMES } from './config.js';
-import { calendar } from './climate.js';
+import { calendar, moonName } from './climate.js';
 import { placeName, MAT_NAMES } from './terrain.js';
 import { TREE_NAMES } from './vegetation.js';
 import { cellTemp } from './hydrology.js';
@@ -102,7 +102,8 @@ function updateHud() {
   const c = world.cal, cl = world.climate;
   $('clock').textContent = `${pad(Math.floor(c.hour))}:${pad(Math.floor(c.minOfDay % 60))}`;
   $('date').textContent = `${SEASON_NAMES[c.season]} · day ${c.dayOfSeason + 1} · year ${c.year + 1}`;
-  $('weather').textContent = `${cl.describe()} · ${Math.round(cl.temp)}°C`;
+  const moon = cl.elev < 0 && cl.moonElev > 0 ? ` · ${moonName(cl.moonPhase)}` : '';
+  $('weather').textContent = `${cl.describe()} · ${Math.round(cl.temp)}°C${moon}`;
   $('speed').textContent = `${SPEEDS[settings.speed]}×`;
   $('pop').textContent = SPECIES_KEYS.map(sp => {
     const n = world.animals.filter(a => a.sp === sp).length;
@@ -156,7 +157,7 @@ function doing(a) {
       if (a.pose === 'pounce') return 'pouncing on mice';
       if (a.pose === 'eat') return 'grazing';
       return S.diet === 'fish' ? 'looking for fish' : 'looking for food';
-    case A.REST: return a.pose === 'sleep' ? 'sleeping' : 'heading to bed';
+    case A.REST: return a.pose === 'sleep' ? 'sleeping' : a.pose === 'rest' ? 'resting, saving energy' : 'heading somewhere to rest';
     case A.SOCIAL: return a.pose === 'groom' ? 'grooming a friend' : a.pose === 'idle' ? 'keeping company' : 'looking for company';
     case A.EXPLORE: return 'exploring';
     case A.FLEE: return 'fleeing!';

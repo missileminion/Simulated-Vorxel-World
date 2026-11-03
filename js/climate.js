@@ -54,6 +54,33 @@ export function sunElevation(cal) {
   return -Math.sin(Math.PI * t / nightLen) * 0.6;
 }
 
+// The moon goes round about every 2.4 valley days: the calendar is squeezed
+// about 13 times, so a real month becomes a couple of days and every night differs.
+export const MOON_DAYS = 2.4;
+
+export function moonState(minute) {
+  const days = minute / MIN_PER_DAY;
+  const phase = ((days / MOON_DAYS) + 0.15) % 1;          // 0 new, 0.5 full
+  const illum = (1 - Math.cos(2 * Math.PI * phase)) / 2;
+  // A full moon rises at sunset, a new moon at sunrise.
+  const hour = (minute % MIN_PER_DAY) / 60;
+  const rise = (6 + phase * 24) % 24;
+  let t = hour - rise; if (t < 0) t += 24;
+  const elev = t < 12.4 ? Math.sin(Math.PI * t / 12.4) : -Math.sin(Math.PI * (t - 12.4) / 11.6);
+  return { phase, illum, elev, t };
+}
+
+export function moonName(phase) {
+  if (phase < 0.04 || phase > 0.96) return 'new moon';
+  if (phase < 0.22) return 'waxing crescent';
+  if (phase < 0.28) return 'first quarter';
+  if (phase < 0.46) return 'waxing gibbous';
+  if (phase < 0.54) return 'full moon';
+  if (phase < 0.72) return 'waning gibbous';
+  if (phase < 0.78) return 'last quarter';
+  return 'waning crescent';
+}
+
 export class Climate {
   constructor() {
     this.weather = 'clear';
@@ -63,6 +90,7 @@ export class Climate {
     this.windX = 0.8; this.windY = 0.3;
     // derived each minute
     this.temp = 10; this.sun = 0; this.elev = 0; this.precip = 0; this.cloud = 0; this.fog = 0;
+    this.moonPhase = 0; this.moonIllum = 0; this.moonElev = 0; this.moonLight = 0;
   }
 
   toJSON() {
@@ -82,6 +110,11 @@ export class Climate {
     this.fog += (fogTarget - this.fog) * 0.01;
     this.elev = sunElevation(cal);
     this.sun = Math.max(0, this.elev) * (1 - 0.65 * this.cloud);
+    const moon = moonState(minute);
+    this.moonPhase = moon.phase; this.moonIllum = moon.illum; this.moonElev = moon.elev;
+    // How much moonlight reaches the ground (0 dark .. 1 bright full moon, clear sky, night).
+    const night = clamp((-this.elev - 0.02) * 8, 0, 1);
+    this.moonLight = moon.illum * clamp(moon.elev * 2, 0, 1) * (1 - 0.85 * this.cloud) * night;
     const diurnal = 4.5 * Math.sin(2 * Math.PI * (cal.hour - 9) / 24) * (1 - 0.5 * this.cloud);
     this.temp = this.meanTemp(cal.yearFrac) + diurnal - (this.weather === 'rain' ? 2 : this.weather === 'storm' ? 3 : 0);
     this.precip = w.rain * (0.6 + 0.4 * this.wetness);

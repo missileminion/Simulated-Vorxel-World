@@ -261,11 +261,33 @@ function stateOf(w, a, foodKnown) {
     | (foodKnown ? 8 : 0) | (c.elev < 0 ? 16 : 0) | ((w.cal.season === 3 || w.snow[i] > 0.02) ? 32 : 0);
 }
 
+// Moonlight shifts the clock: herons fish on bright nights, foxes prowl longer.
+function sleepinessNow(w, a, S) {
+  let v = sleepiness(S.activity, w.cal.hour);
+  const ml = w.climate.moonLight;
+  if (a.sp === 'heron') v *= 1 - 0.65 * ml;
+  if (a.sp === 'fox') v *= 1 - 0.3 * ml;
+  return v;
+}
+
+// How much each species likes to lie low when nothing needs doing.
+const IDLE = { otter: 0.18, deer: 0.42, rabbit: 0.32, fox: 0.4, heron: 0.3 };
+
 function instincts(w, a, S, sleepy, young) {
-  const t = a.traits, m = a.mind;
+  const t = a.traits, m = a.mind, c = w.climate;
+  // Saving energy: when fed, safe and not lonely, lying low beats wandering about.
+  // Hunger overrides all of this: a hungry animal takes risks and keeps looking for food.
+  const fed = clamp(1 - a.hunger / 0.6, 0, 1);
+  const content = fed * (1 - a.fear) * (1 - 0.5 * a.lonely);
+  let lieLow = IDLE[a.sp] * content * (0.6 + t.lazy);
+  // Shelter from rain, storms and midday heat.
+  if (c.precip > 0) lieLow += (c.weather === 'storm' ? 0.4 : 0.12) * fed;
+  if (c.temp > 26 && c.sun > 0.4) lieLow += 0.25 * fed;
+  // Prey keep hidden under a bright moon.
+  if ((a.sp === 'rabbit' || a.sp === 'deer') && c.elev < -0.05) lieLow += 0.4 * c.moonLight * fed;
   return [
     Math.pow(a.hunger, 1.4) * 1.3 + (young ? 0.1 : 0) + (a.hunger > 0.8 ? 1 : 0),
-    Math.pow(1 - a.energy, 1.3) + sleepy * 0.7 + t.lazy * 0.15 + m.grief * 0.25 + (1 - a.health) * 0.4,
+    Math.pow(1 - a.energy, 1.3) + sleepy * 0.7 + t.lazy * 0.15 + m.grief * 0.25 + (1 - a.health) * 0.4 + lieLow,
     a.lonely * (0.3 + t.social) * 0.8 + (young ? 0.3 : 0) + m.grief * 0.15,
     0.12 + t.curious * 0.3 + (young ? 0.15 : 0) - sleepy * 0.2 + m.bored * 0.6,
     a.fear * (1.6 - t.bold),
@@ -278,7 +300,7 @@ function decide(w, a) {
   const rng = w.rng;
   const age = ageYears(w, a);
   const young = age < S.adult;
-  const sleepy = sleepiness(S.activity, w.cal.hour);
+  const sleepy = sleepinessNow(w, a, S);
   const foodNear = scout(w, a, S.sense);
   const s = stateOf(w, a, foodNear >= 0 || recalledFood(w, a) >= 0);
 
@@ -320,7 +342,7 @@ function decide(w, a) {
 
 // A fox sizes up what it could hunt: chance of success vs. chance of getting hurt.
 function chooseHunt(w, a, S) {
-  const cands = nearby(w, a, S.sense * 0.8, b => (b.sp === 'rabbit' && b.pose !== 'sleep')
+  const cands = nearby(w, a, S.sense * 0.8, b => (b.sp === 'rabbit' && b.pose !== 'sleep' && b.pose !== 'rest')
     || ((b.sp === 'deer' || b.sp === 'otter') && !isAdult(w, b) && ageYears(w, b) < 0.5));
   let best = null, bestEV = 0.04, tempting = null;
   const desperate = clamp((a.hunger - 0.7) * 2.5, 0, 0.9);
@@ -520,8 +542,16 @@ function senseThreats(w, a, S) {
   const preds = young ? S.youngPredators : S.predators;
   let fear = a.fear * 0.96;
   let threat = null;
+  const c = w.climate;
+  const brightNight = c.elev < -0.05 ? c.moonLight : 0;
+  if ((a.sp === 'rabbit' || a.sp === 'deer') && brightNight > 0.3 && a.pose !== 'sleep') {
+    // Out in the open under a bright moon feels exposed.
+    const i = cellOf(a.x, a.y);
+    const cover = (w.tree[i] >= 1 && w.tree[i] <= 3) || w.reed[i] > 0.4;
+    if (!cover && a.hunger < 0.6) fear = Math.max(fear, Math.min(0.22, fear + 0.003 * brightNight));
+  }
   if (preds.length) {
-    const r = S.sense * (0.7 + 0.5 * (1 - a.traits.bold));
+    const r = S.sense * (0.7 + 0.5 * (1 - a.traits.bold)) * (1 + 0.6 * brightNight);
     for (const [b, d] of nearby(w, a, r, b => preds.includes(b.sp) && isAdult(w, b))) {
       // How bad it feels depends on what this animal has learned about that predator.
       const dread = 0.6 + 0.8 * belief(a, 'fear:' + b.sp, [2, 2]);
@@ -671,16 +701,25 @@ function act(w, a, S) {
       // If the way to bed is blocked, settle wherever is dry enough.
       if (a.stuck > 3 && goodBed(w, a, cellOf(a.x, a.y))) { a.tx = a.x; a.ty = a.y; a.stuck = 0; }
       if (moveToward(w, a, S, a.tx, a.ty)) {
-        a.pose = 'sleep';
-        if (!a.wasAsleep) { a.wasAsleep = true; think(w, a, 'sleep', {}, 0.7); }
-        a.energy += 1 / 330;
-        a.hunger -= S.hunger * 0.5;
+        // Sleep when sleepy or worn out; otherwise just lie low and save energy.
+        const sleepy = sleepinessNow(w, a, S) > 0.45 || a.energy < 0.5;
+        a.pose = sleepy ? 'sleep' : 'rest';
+        if (!a.wasAsleep) {
+          a.wasAsleep = true;
+          const c = w.climate;
+          const topic = sleepy ? 'sleep' : c.precip > 0 ? 'shelter' : c.temp > 26 ? 'hot' : (c.elev < -0.05 && c.moonLight > 0.5 && (a.sp === 'rabbit' || a.sp === 'deer')) ? 'moonBright' : 'lieLow';
+          think(w, a, topic, {}, 0.7);
+        }
+        a.energy += sleepy ? 1 / 330 : 1 / 700;
+        a.hunger -= S.hunger * (sleepy ? 0.5 : 0.35);
         // Otters and deer like to rest close together.
         if (a.sp === 'otter' || a.sp === 'deer') {
           if (nearby(w, a, 2, b => b.sp === a.sp && b.action === A.REST).length) a.lonely -= 1 / 300;
         }
-        if (a.energy > 0.97 && sleepiness(S.activity, w.cal.hour) < 0.5) { a.done = true; think(w, a, 'wake', {}, 0.8); }
+        if (a.energy > 0.97 && sleepinessNow(w, a, S) < 0.5 && a.pose === 'sleep') { a.done = true; think(w, a, 'wake', {}, 0.8); }
       }
+      if (a.pose === 'rest' && (a.hunger > 0.5 || a.lonely > 0.8 || a.timer > 150)) a.done = true;
+      if (a.hunger > 0.75 && a.energy > 0.15) a.done = true;          // too hungry to sleep
       if (a.timer > 600) a.done = true;
       break;
     }
@@ -734,7 +773,8 @@ function act(w, a, S) {
   if (a.stuck > 6) a.done = true;
 
   // Reward: needs met are good, needs growing urgent are bad.
-  const r = (before.h - a.hunger) * 1.6 + Math.max(0, a.energy - before.e) * 1.0
+  // Spending energy for nothing is a small cost: animals learn not to waste it.
+  const r = (before.h - a.hunger) * 1.6 + (a.energy - before.e) * (a.energy > before.e ? 1.0 : 0.8)
     + Math.max(0, before.l - a.lonely) * 0.8 + Math.max(0, before.p - a.play) * 0.6;
   a.reward += r;
   return r;
@@ -791,7 +831,7 @@ function fishSchool(w, a, S) {
 // A fox chasing prey. Prey may kick back; guardians may join in.
 function chase(w, a, S) {
   const p = byId(w, a.prey);
-  if (!p || !p.alive || (p.sp === 'rabbit' && p.pose === 'sleep')) { a.done = true; return; }
+  if (!p || !p.alive || (p.sp === 'rabbit' && (p.pose === 'sleep' || p.pose === 'rest'))) { a.done = true; return; }
   const d = Math.hypot(p.x - a.x, p.y - a.y);
   if (d > S.sense * 1.6 || a.timer > 90) {
     a.done = true;
@@ -803,6 +843,7 @@ function chase(w, a, S) {
   a.pose = 'run';
   if (d < 0.8) {
     let chance = 0.06 + 0.3 * a.skill - (p.fear > 0.3 ? 0.05 : 0);
+    if (w.climate.elev < -0.05) chance *= 0.8 + 0.6 * w.climate.moonLight;   // easier to see prey by moonlight
     const mum = byId(w, p.mother);
     if (mum && mum.alive && Math.hypot(mum.x - p.x, mum.y - p.y) < 3) chance *= 0.25;
     if (w.rng.chance(clamp(chance, 0.02, 0.5))) {
