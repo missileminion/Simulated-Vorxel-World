@@ -1,0 +1,99 @@
+/* Interface around the valley: quiet glass panels that fade when you stop moving. */
+
+.fade { transition: opacity 1.2s ease; }
+body.idle .fade { opacity: 0.18; }
+body.idle .log { opacity: 0.55; }
+
+.hud {
+  position: fixed; top: max(16px, env(safe-area-inset-top)); left: 16px;
+  padding: 10px 14px; border-radius: 14px;
+  background: var(--panel); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  border: 1px solid var(--panel-line);
+  pointer-events: none; user-select: none;
+}
+.clock { font-size: 22px; font-weight: 600; letter-spacing: 0.02em; font-variant-numeric: tabular-nums; }
+.date, .weather { color: var(--ink-soft); font-size: 13px; }
+
+.log {
+  position: fixed; left: 16px; bottom: max(16px, env(safe-area-inset-bottom));
+  max-width: min(420px, calc(100vw - 32px));
+  display: flex; flex-direction: column; gap: 6px;
+  pointer-events: none;
+}
+.log .item {
+  padding: 7px 12px; border-radius: 12px;
+  background: var(--panel); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  border: 1px solid var(--panel-line);
+  font-size: 13px; color: var(--ink);
+  animation: rise 0.8s ease both;
+}
+.log .item .when { color: var(--ink-soft); font-size: 11px; margin-right: 6px; }
+.log .item.old { opacity: 0.6; }
+@keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+.controls {
+  position: fixed; right: 16px; bottom: max(16px, env(safe-area-inset-bottom));
+  display: flex; gap: 6px; padding: 6px; border-radius: 16px;
+  background: var(--panel); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  border: 1px solid var(--panel-line);
+}
+.controls button {
+  width: 36px; height: 36px; border-radius: 11px; border: 0;
+  background: transparent; color: var(--ink); cursor: pointer;
+  display: grid; place-items: center; font: inherit; font-weight: 600; font-size: 13px;
+}
+.controls button:hover { background: rgba(38, 49, 58, 0.07); }
+.controls button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.controls svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+.panel {
+  position: fixed; right: 16px; top: max(16px, env(safe-area-inset-top));
+  width: min(280px, calc(100vw - 32px));
+  padding: 12px 14px; border-radius: 14px;
+  background: var(--panel); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--panel-line);
+  font-size: 13px;
+}
+.panel h3 { margin: 0 0 6px; font-size: 14px; }
+.panel dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; }
+.panel dt { color: var(--ink-soft); }
+.panel dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+.panel .meter { height: 4px; border-radius: 2px; background: rgba(38, 49, 58, 0.1); margin-top: 3px; overflow: hidden; }
+.panel .meter i { display: block; height: 100%; background: var(--accent); }
+.hidden { display: none !important; }
+
+.sheet { max-height: min(70vh, 560px); display: flex; flex-direction: column; width: min(360px, calc(100vw - 32px)); }
+.sheet-head { display: flex; align-items: center; justify-content: space-between; }
+.sheet-head h2 { margin: 0; font-size: 15px; }
+.sheet ol { list-style: none; margin: 10px 0; padding: 0; overflow: auto; display: flex; flex-direction: column-reverse; gap: 6px; }
+.sheet li { font-size: 13px; }
+.sheet li .when { display: block; color: var(--ink-soft); font-size: 11px; }
+.sheet-foot { border-top: 1px solid var(--panel-line); padding-top: 8px; }
+.close { border: 0; background: none; font-size: 20px; line-height: 1; cursor: pointer; color: var(--ink-soft); }
+.link { border: 0; background: none; padding: 0; color: #9a5a4a; cursor: pointer; font: inherit; font-size: 12px; }
+
+.overlay {
+  position: fixed; inset: 0; display: grid; place-items: center;
+  background: rgba(30, 40, 48, 0.25); backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
+}
+.overlay .card {
+  width: min(380px, calc(100vw - 32px)); padding: 18px 20px; border-radius: 18px;
+  background: rgba(250, 248, 242, 0.92); border: 1px solid var(--panel-line);
+  box-shadow: 0 20px 50px rgba(20, 30, 40, 0.18);
+}
+.overlay h2 { margin: 0 0 4px; font-size: 17px; }
+.overlay p { margin: 0 0 10px; color: var(--ink-soft); }
+.overlay .bar { height: 5px; border-radius: 3px; background: rgba(38, 49, 58, 0.1); overflow: hidden; }
+.overlay .bar div { height: 100%; width: 0; background: var(--accent); transition: width 0.2s; }
+.overlay ul { margin: 12px 0 0; padding-left: 18px; max-height: 40vh; overflow: auto; font-size: 13px; }
+.overlay ul:empty { display: none; }
+.overlay button {
+  margin-top: 14px; width: 100%; padding: 9px; border-radius: 11px; border: 0;
+  background: var(--accent); color: white; font: inherit; font-weight: 600; cursor: pointer;
+}
+
+@media (max-width: 560px) {
+  .clock { font-size: 18px; }
+  .log { bottom: 76px; right: 16px; }
+  .panel { top: auto; bottom: 130px; }
+}

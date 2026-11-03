@@ -1,0 +1,338 @@
+// Starts the valley, keeps the clock running, catches up after absences and
+// wires the small interface around the canvas.
+
+import { World } from './world.js';
+import { Renderer } from './render.js';
+import * as store from './store.js';
+import { GAME_MIN_PER_REAL_SEC, SPEEDS, EXACT_CATCHUP_MIN, MAX_CATCHUP_DAYS, MIN_PER_DAY, SEASON_NAMES } from './config.js';
+import { calendar } from './climate.js';
+import { placeName, MAT_NAMES } from './terrain.js';
+import { TREE_NAMES } from './vegetation.js';
+import { cellTemp } from './hydrology.js';
+
+const $ = id => document.getElementById(id);
+const params = new URLSearchParams(location.search);
+const nextFrame = () => new Promise(r => setTimeout(r, 0));
+
+let settings = { speed: 0, rot: 0 };
+let world, renderer;
+let paused = false;
+
+// ---------- formatting ----------
+
+const pad = n => String(n).padStart(2, '0');
+function stamp(minute) {
+  const c = calendar(minute);
+  return `Year ${c.year + 1} · ${SEASON_NAMES[c.season]} ${c.dayOfSeason + 1} · ${pad(Math.floor(c.hour))}:${pad(Math.floor(c.minOfDay % 60))}`;
+}
+function duration(ms) {
+  const m = Math.round(ms / 60000);
+  if (m < 60) return `${m} minute${m === 1 ? '' : 's'}`;
+  const h = Math.round(m / 60);
+  if (h < 48) return `${h} hour${h === 1 ? '' : 's'}`;
+  return `${Math.round(h / 24)} days`;
+}
+function gameSpan(min) {
+  const d = Math.floor(min / MIN_PER_DAY);
+  if (d >= 1) return `${d} valley day${d === 1 ? '' : 's'}`;
+  return `${Math.round(min / 60)} valley hours`;
+}
+
+// ---------- overlay ----------
+
+function overlay(title, text, progress) {
+  $('overlay').classList.remove('hidden');
+  $('overlayTitle').textContent = title;
+  $('overlayText').textContent = text || '';
+  $('overlayBar').parentElement.classList.toggle('hidden', progress == null);
+  if (progress != null) $('overlayBar').style.width = `${Math.round(progress * 100)}%`;
+}
+function closeOverlay() {
+  $('overlay').classList.add('hidden');
+  $('overlayList').innerHTML = '';
+  $('overlayClose').classList.add('hidden');
+}
+$('overlayClose').addEventListener('click', closeOverlay);
+
+// ---------- catching up ----------
+
+let catchingUp = false;
+async function catchUp(realMs, label) {
+  const total = Math.min(realMs / 1000 * GAME_MIN_PER_REAL_SEC, MAX_CATCHUP_DAYS * MIN_PER_DAY);
+  if (total < 2) return;
+  catchingUp = true;
+  const start = world.minute;
+  const exact = Math.min(total, EXACT_CATCHUP_MIN);
+  const big = total > 240;
+  let done = 0;
+  if (big) overlay('Catching up…', `You were away ${duration(realMs)}.`, 0);
+  while (done < exact) {
+    const end = performance.now() + 40;
+    while (done < exact && performance.now() < end) { world.tick(); done++; }
+    if (big) { $('overlayBar').style.width = `${Math.round(done / total * 100)}%`; await nextFrame(); }
+  }
+  while (done + MIN_PER_DAY <= total) {
+    world.approximateDay();
+    done += MIN_PER_DAY;
+    if (big) { $('overlayBar').style.width = `${Math.round(done / total * 100)}%`; await nextFrame(); }
+  }
+  catchingUp = false;
+  renderer.buildNow();
+  if (big) {
+    const events = world.log.since(start);
+    overlay(label || 'While you were away', `${duration(realMs)} passed here, about ${gameSpan(world.minute - start)} in the valley.`, null);
+    const list = $('overlayList');
+    for (const e of events.slice(-12)) {
+      const li = document.createElement('li');
+      li.textContent = e.text;
+      list.appendChild(li);
+    }
+    if (!events.length) list.innerHTML = '<li>Nothing remarkable. The river kept running.</li>';
+    $('overlayClose').classList.remove('hidden');
+  }
+  renderLog();
+}
+
+// ---------- HUD ----------
+
+function updateHud() {
+  const c = world.cal, cl = world.climate;
+  $('clock').textContent = `${pad(Math.floor(c.hour))}:${pad(Math.floor(c.minOfDay % 60))}`;
+  $('date').textContent = `${SEASON_NAMES[c.season]} · day ${c.dayOfSeason + 1} · year ${c.year + 1}`;
+  $('weather').textContent = `${cl.describe()} · ${Math.round(cl.temp)}°C`;
+  $('speed').textContent = `${SPEEDS[settings.speed]}×`;
+}
+
+function renderLog() {
+  const box = $('log');
+  box.innerHTML = '';
+  const items = world.log.items.slice(-4);
+  items.forEach((e, n) => {
+    const d = document.createElement('div');
+    d.className = 'item' + (n < items.length - 2 ? ' old' : '');
+    const c = calendar(e.minute);
+    d.innerHTML = `<span class="when"></span>`;
+    d.firstChild.textContent = `${SEASON_NAMES[c.season]} ${c.dayOfSeason + 1}`;
+    d.appendChild(document.createTextNode(e.text));
+    box.appendChild(d);
+  });
+  if (!$('historyPanel').classList.contains('hidden')) renderHistory();
+}
+
+function renderHistory() {
+  const ol = $('historyList');
+  ol.innerHTML = '';
+  for (const e of world.log.items) {
+    const li = document.createElement('li');
+    const when = document.createElement('span');
+    when.className = 'when';
+    when.textContent = stamp(e.minute);
+    li.appendChild(when);
+    li.appendChild(document.createTextNode(e.text));
+    ol.appendChild(li);
+  }
+}
+
+// ---------- inspector ----------
+
+let inspected = -1;
+function pct(v) { return `${Math.round(v * 100)}%`; }
+function meter(v) { return `<div class="meter"><i style="width:${Math.round(Math.min(1, Math.max(0, v)) * 100)}%"></i></div>`; }
+function updateInspect() {
+  const panel = $('inspect');
+  if (inspected < 0) { panel.classList.add('hidden'); return; }
+  const k = inspected, w = world;
+  const rows = [];
+  const add = (a, b) => rows.push(`<dt>${a}</dt><dd>${b}</dd>`);
+  add('Height', `${w.terrain[k].toFixed(1)} m`);
+  add('Ground', MAT_NAMES[w.material[k]]);
+  add('Temperature', `${Math.round(cellTemp(w, k))}°C`);
+  if (w.water[k] > 0.02) add(w.ice[k] ? 'Water (iced)' : 'Water', `${w.water[k].toFixed(2)} m`);
+  if (w.snow[k] > 0.002) add('Snow', `${Math.round(w.snow[k] * 1000 * 8)} mm`);
+  add('Soil moisture', pct(w.moist[k]) + meter(w.moist[k]));
+  if (w.grass[k] > 0.05) add('Grass', pct(w.grass[k]) + meter(w.grass[k]));
+  if (w.reed[k] > 0.05) add('Reeds', pct(w.reed[k]) + meter(w.reed[k]));
+  if (w.tree[k]) {
+    add('Plant', TREE_NAMES[w.tree[k]]);
+    if (w.tree[k] < 4) add('Size · health', `${pct(w.treeSize[k])} · ${pct(w.treeHealth[k])}`);
+  }
+  if (w.fish[k] > 0.01) add('Fish', pct(w.fish[k]) + meter(w.fish[k]));
+  add('Soil fertility', pct(w.fert[k]) + meter(w.fert[k]));
+  if (w.fire[k] > 0) add('Fire', 'burning');
+  else if (w.burn[k] > 0.1) add('Burn scar', pct(w.burn[k]));
+  const name = placeName(k);
+  panel.innerHTML = `<div class="sheet-head"><h3></h3><button class="close" aria-label="Close">×</button></div><dl>${rows.join('')}</dl>`;
+  panel.querySelector('h3').textContent = name.charAt(0).toUpperCase() + name.slice(1);
+  panel.querySelector('.close').onclick = () => { inspected = -1; updateInspect(); };
+  panel.classList.remove('hidden');
+}
+
+// ---------- input ----------
+
+function setupInput() {
+  const cv = $('view');
+  const pointers = new Map();
+  let moved = 0, pinch = 0;
+  cv.addEventListener('pointerdown', e => {
+    cv.setPointerCapture(e.pointerId);
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    moved = 0;
+    if (pointers.size === 2) {
+      const [a, b] = [...pointers.values()];
+      pinch = Math.hypot(a.x - b.x, a.y - b.y);
+    }
+    cv.classList.add('dragging');
+  });
+  cv.addEventListener('pointermove', e => {
+    const p = pointers.get(e.pointerId);
+    if (!p) return;
+    const dx = e.clientX - p.x, dy = e.clientY - p.y;
+    p.x = e.clientX; p.y = e.clientY;
+    if (pointers.size === 1) { renderer.pan(dx, dy); moved += Math.abs(dx) + Math.abs(dy); }
+    else if (pointers.size === 2) {
+      const [a, b] = [...pointers.values()];
+      const d = Math.hypot(a.x - b.x, a.y - b.y);
+      if (pinch > 0) renderer.zoomAt(d / pinch, (a.x + b.x) / 2, (a.y + b.y) / 2);
+      pinch = d; moved += 10;
+    }
+  });
+  const up = e => {
+    if (!pointers.has(e.pointerId)) return;
+    pointers.delete(e.pointerId);
+    if (pointers.size === 0) {
+      cv.classList.remove('dragging');
+      if (moved < 6) {
+        const k = renderer.pick(e.clientX, e.clientY);
+        inspected = k === inspected ? -1 : k;
+        updateInspect();
+      }
+    }
+    pinch = 0;
+  };
+  cv.addEventListener('pointerup', up);
+  cv.addEventListener('pointercancel', up);
+  cv.addEventListener('wheel', e => {
+    e.preventDefault();
+    renderer.zoomAt(Math.exp(-e.deltaY * 0.0015), e.clientX, e.clientY);
+  }, { passive: false });
+
+  const rotate = d => { settings.rot = (settings.rot + d + 4) % 4; renderer.setRotation(settings.rot); };
+  const togglePause = () => {
+    paused = !paused;
+    $('pauseIcon').innerHTML = paused ? '<path d="M8 5l11 7-11 7z" />' : '<path d="M9 6v12M15 6v12" />';
+  };
+  const cycleSpeed = () => { settings.speed = (settings.speed + 1) % SPEEDS.length; updateHud(); };
+  const toggleHistory = () => {
+    const p = $('historyPanel');
+    p.classList.toggle('hidden');
+    if (!p.classList.contains('hidden')) renderHistory();
+  };
+  $('rotL').onclick = () => rotate(-1);
+  $('rotR').onclick = () => rotate(1);
+  $('home').onclick = () => renderer.resetView();
+  $('pause').onclick = togglePause;
+  $('speed').onclick = cycleSpeed;
+  $('history').onclick = toggleHistory;
+  document.querySelectorAll('[data-close]').forEach(b => b.onclick = () => $(b.dataset.close).classList.add('hidden'));
+  $('newWorld').onclick = () => {
+    if (!confirm('Start over with a brand new valley? The current one will be gone.')) return;
+    store.clear();
+    location.search = '?fresh';
+  };
+  window.addEventListener('keydown', e => {
+    if (e.target.closest('input, textarea')) return;
+    if (e.key === 'q' || e.key === 'Q') rotate(-1);
+    else if (e.key === 'e' || e.key === 'E') rotate(1);
+    else if (e.key === ' ') { e.preventDefault(); togglePause(); }
+    else if (e.key === 's' || e.key === 'S') cycleSpeed();
+    else if (e.key === 'h' || e.key === 'H') toggleHistory();
+    else if (e.key === '0') renderer.resetView();
+    else if (e.key === '+' || e.key === '=') renderer.zoomAt(1.2, innerWidth / 2, innerHeight / 2);
+    else if (e.key === '-') renderer.zoomAt(1 / 1.2, innerWidth / 2, innerHeight / 2);
+    else if (e.key === 'Escape') { inspected = -1; updateInspect(); $('historyPanel').classList.add('hidden'); closeOverlay(); }
+  });
+
+  // Fade the interface when the pointer rests.
+  let idleTimer;
+  const wake = () => {
+    document.body.classList.remove('idle');
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => document.body.classList.add('idle'), 6000);
+  };
+  ['pointermove', 'pointerdown', 'keydown', 'wheel'].forEach(t => window.addEventListener(t, wake, { passive: true }));
+  wake();
+}
+
+// ---------- saving & visibility ----------
+
+let lastSave = performance.now();
+function persist() {
+  if (catchingUp) return;
+  store.save(world, settings);
+  lastSave = performance.now();
+}
+let hiddenAt = 0;
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { hiddenAt = Date.now(); persist(); }
+  else if (hiddenAt) {
+    const away = Date.now() - hiddenAt;
+    hiddenAt = 0;
+    if (!paused) catchUp(away);
+  }
+});
+window.addEventListener('pagehide', persist);
+
+// ---------- main loop ----------
+
+let last = performance.now(), acc = 0, frameAcc = 0, hudAcc = 0, inspectAcc = 0;
+function loop(now) {
+  const dt = Math.min(0.25, (now - last) / 1000);
+  last = now;
+  if (!paused && !catchingUp) {
+    acc += dt * GAME_MIN_PER_REAL_SEC * SPEEDS[settings.speed];
+    const end = performance.now() + 9;
+    while (acc >= 1 && performance.now() < end) { world.tick(); acc -= 1; }
+    if (acc > 900) acc = 900;
+  }
+  frameAcc += dt;
+  if (frameAcc >= 1 / 30) {
+    renderer.frame(frameAcc);
+    frameAcc = 0;
+  }
+  hudAcc += dt;
+  if (hudAcc > 0.25) { updateHud(); hudAcc = 0; }
+  inspectAcc += dt;
+  if (inspected >= 0 && inspectAcc > 0.6) { updateInspect(); inspectAcc = 0; }
+  if (now - lastSave > 30000) persist();
+  requestAnimationFrame(loop);
+}
+
+// ---------- start ----------
+
+async function start() {
+  const loaded = params.has('fresh') ? null : store.load();
+  if (loaded) {
+    world = loaded.world;
+    settings = { ...settings, ...loaded.settings };
+  } else {
+    overlay('Shaping a new valley…', 'Carving the river and filling the lake.', null);
+    await nextFrame();
+    const seed = params.get('seed') ? Number(params.get('seed')) : (Math.random() * 2 ** 32) >>> 0;
+    world = World.create(seed);
+    closeOverlay();
+    if (params.has('fresh')) history.replaceState(null, '', location.pathname);
+  }
+  renderer = new Renderer($('view'), world);
+  window.valley = { world, renderer }; // handy for poking around in the console
+  if (settings.rot) renderer.setRotation(settings.rot);
+  world.log.onAdd(() => renderLog());
+  setupInput();
+  updateHud();
+  renderLog();
+  addEventListener('resize', () => renderer.resize());
+  requestAnimationFrame(t => { last = t; requestAnimationFrame(loop); });
+  if (loaded) await catchUp(Date.now() - loaded.savedAt);
+  persist();
+}
+
+start();

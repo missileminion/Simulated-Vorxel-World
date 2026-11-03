@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Quiet Valley</title>
+  <meta name="description" content="A small voxel valley that lives on its own: rivers, seasons, weather, forests and fish.">
+  <meta name="theme-color" content="#2b3540">
+  <link rel="stylesheet" href="style.css">
+  <style>
+    :root {
+      --ink: #26313a;
+      --ink-soft: #55636e;
+      --panel: rgba(250, 248, 242, 0.72);
+      --panel-line: rgba(38, 49, 58, 0.1);
+      --accent: #5f8f8a;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; background: #c9d6d8; color: var(--ink); overflow: hidden; }
+    body { font: 14px/1.4 ui-rounded, "SF Pro Rounded", system-ui, -apple-system, "Segoe UI", sans-serif; }
+    #view { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
+    #view.dragging { cursor: grabbing; }
+  </style>
+</head>
+<body>
+  <canvas id="view" aria-label="The valley"></canvas>
+
+  <header class="hud fade" id="hud">
+    <div class="clock" id="clock">06:00</div>
+    <div class="date" id="date">Spring · day 1 · year 1</div>
+    <div class="weather" id="weather">Clear · 8°</div>
+  </header>
+
+  <section class="log fade" id="log" aria-live="polite"></section>
+
+  <nav class="controls fade" id="controls">
+    <button id="rotL" title="Rotate left (Q)" aria-label="Rotate left">
+      <svg viewBox="0 0 24 24"><path d="M4 9a8 8 0 1 1 1 7" /><path d="M4 4v5h5" /></svg>
+    </button>
+    <button id="rotR" title="Rotate right (E)" aria-label="Rotate right">
+      <svg viewBox="0 0 24 24"><path d="M20 9a8 8 0 1 0-1 7" /><path d="M20 4v5h-5" /></svg>
+    </button>
+    <button id="home" title="Reset view (0)" aria-label="Reset view">
+      <svg viewBox="0 0 24 24"><path d="M4 11l8-6 8 6" /><path d="M6 10v9h12v-9" /></svg>
+    </button>
+    <button id="pause" title="Pause (space)" aria-label="Pause">
+      <svg viewBox="0 0 24 24" id="pauseIcon"><path d="M9 6v12M15 6v12" /></svg>
+    </button>
+    <button id="speed" class="text" title="Speed (S)" aria-label="Speed">1×</button>
+    <button id="history" title="History (H)" aria-label="History">
+      <svg viewBox="0 0 24 24"><path d="M5 6h14M5 12h14M5 18h9" /></svg>
+    </button>
+  </nav>
+
+  <aside class="panel hidden" id="inspect" aria-live="polite"></aside>
+
+  <aside class="panel sheet hidden" id="historyPanel">
+    <div class="sheet-head">
+      <h2>Valley history</h2>
+      <button class="close" data-close="historyPanel" aria-label="Close">×</button>
+    </div>
+    <ol id="historyList"></ol>
+    <div class="sheet-foot">
+      <button id="newWorld" class="link">Start a new valley</button>
+    </div>
+  </aside>
+
+  <div class="overlay hidden" id="overlay">
+    <div class="card">
+      <h2 id="overlayTitle">Shaping a new valley…</h2>
+      <p id="overlayText"></p>
+      <div class="bar"><div id="overlayBar"></div></div>
+      <ul id="overlayList"></ul>
+      <button id="overlayClose" class="hidden">Back to the valley</button>
+    </div>
+  </div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
