@@ -271,7 +271,7 @@ function sleepinessNow(w, a, S) {
 }
 
 // How much each species likes to lie low when nothing needs doing.
-const IDLE = { otter: 0.35, deer: 0.6, rabbit: 0.5, fox: 0.6, heron: 0.55 };
+const IDLE = { otter: 0.12, deer: 0.6, rabbit: 0.5, fox: 0.6, heron: 0.55 };
 
 function instincts(w, a, S, sleepy, young) {
   const t = a.traits, m = a.mind, c = w.climate;
@@ -683,6 +683,12 @@ function act(w, a, S) {
         a.pose = 'eat';
         const i = cellOf(a.x, a.y);
         if (S.diet === 'graze') {
+          // Grazers drift a step at a time as they crop the grass.
+          if (a.timer % 7 === 0) {
+            a.heading += rng.range(-0.8, 0.8);
+            const nx = clamp(a.x + Math.cos(a.heading) * 0.3, 0, N - 1), ny = clamp(a.y + Math.sin(a.heading) * 0.3, 0, N - 1);
+            if (w.water[cellOf(nx, ny)] < 0.05) { a.x = nx; a.y = ny; a.tx = nx; a.ty = ny; }
+          }
           const snowK = w.snow[i] > 0.02 ? 0.35 : 1;
           const bite = Math.min(w.grass[i], 0.004) * snowK;
           w.grass[i] -= bite;
@@ -748,13 +754,21 @@ function act(w, a, S) {
         }
         a.energy += sleepy ? 1 / 330 : 1 / 700;
         a.hunger -= S.hunger * (sleepy ? 0.5 : 0.35);
+        // Nobody lies like a statue: shift, turn, settle again every so often.
+        if (a.timer % (6 + (a.id % 9)) === 0) {
+          a.heading += rng.range(-1.4, 1.4);
+          const nx = clamp(a.x + rng.range(-0.35, 0.35), 0, N - 1), ny = clamp(a.y + rng.range(-0.35, 0.35), 0, N - 1);
+          if (cellOf(nx, ny) === cellOf(a.x, a.y)) { a.x = nx; a.y = ny; }
+        }
         // Otters and deer like to rest close together.
         if (a.sp === 'otter' || a.sp === 'deer') {
           if (nearby(w, a, 2, b => b.sp === a.sp && b.action === A.REST).length) a.lonely -= 1 / 300;
         }
         if (a.energy > 0.97 && sleepinessNow(w, a, S) < 0.5 && a.pose === 'sleep') { a.done = true; think(w, a, 'wake', {}, 0.8); }
       }
-      if (a.pose === 'rest' && (a.hunger > 0.5 || a.lonely > 0.8 || a.timer > 150)) a.done = true;
+      if (a.pose === 'rest' && (a.hunger > 0.5 || a.lonely > 0.8 || a.timer > (a.sp === 'otter' ? 40 : 150))) a.done = true;
+      // Otters doze in shorter bouts than the big grazers.
+      if (a.sp === 'otter' && a.pose === 'sleep' && a.timer > 90 + (a.id % 5) * 20 && a.energy > 0.7) a.done = true;
       if (a.hunger > 0.75 && a.energy > 0.15) a.done = true;          // too hungry to sleep
       if (a.timer > 600) a.done = true;
       break;

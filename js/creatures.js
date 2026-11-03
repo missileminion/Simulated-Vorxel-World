@@ -387,7 +387,17 @@ export function drawCreatures(r, ctx, alpha, time) {
     const scale = E * (young ? 0.62 : 1);
     const inWater = w.water[k] > 0.25 && !w.ice[k];
     let pose = a.pose;
-    if (pose === 'rest') pose = a.sp === 'heron' ? 'idle' : a.sp === 'otter' && !inWater ? 'groom' : 'sleep';
+    if (pose === 'rest') {
+      if (a.sp === 'heron') pose = 'idle';
+      else if (a.sp === 'otter' && !inWater) {
+        // A resting otter keeps busy: grooms, rolls on its back, lies flat, grooms again.
+        const phase = Math.floor(time / 14 + a.id * 0.37) % 4;
+        pose = phase === 1 ? 'float' : phase === 2 ? 'sleep' : 'groom';
+      } else pose = 'sleep';
+    }
+    if (a.sp === 'otter' && a.pose === 'sleep' && !inWater && Math.floor(time / 40 + a.id) % 3 === 0) pose = 'groom';
+    // Small signs of life while still: breathing, a slowly turning head.
+    const stillPose = pose === 'sleep' || pose === 'float' || pose === 'groom' || pose === 'eat' || pose === 'idle' || pose === 'stalk';
     if (a.sp === 'otter' && inWater) pose = pose === 'sleep' ? 'float' : pose === 'dive' ? 'dive' : 'swim';
     const lift = a.flying ? 14 : 0;
     const len = LENGTH[a.sp] * PPM * scale;
@@ -401,7 +411,8 @@ export function drawCreatures(r, ctx, alpha, time) {
       ctx.strokeStyle = 'rgba(255,236,170,0.9)'; ctx.lineWidth = Math.max(0.4, 1 / zCss);
       ctx.beginPath(); ctx.ellipse(sx, sy, len * 0.7, len * 0.32, 0, 0, Math.PI * 2); ctx.stroke();
     }
-    const by = sy - lift;
+    const breathe = stillPose ? Math.sin(time * 1.6 + a.id) * 0.25 : 0;
+    const by = sy - lift - breathe;
     const [hi, hj] = r.dir(Math.cos(a.heading), Math.sin(a.heading));
     const haze = 0.1 * (1 - it.depth / (2 * N - 2));
 
@@ -418,7 +429,8 @@ export function drawCreatures(r, ctx, alpha, time) {
     if (blob < 0.99) {
       ctx.globalAlpha = 1 - blob;
       const boxes = buildModel(a, pose, time, young, winter);
-      drawModel(r, ctx, a, boxes, sx, by, a.heading, scale, detail, haze);
+      const look = stillPose && pose !== 'sleep' ? Math.sin(time * 0.35 + a.id * 1.7) * 0.5 : 0;
+      drawModel(r, ctx, a, boxes, sx, by, a.heading + look, scale, detail, haze);
       ctx.globalAlpha = 1;
     }
     if (inWater && a.sp === 'otter' && (pose === 'swim' || pose === 'dive') && Math.hypot(a.x - a.px, a.y - a.py) > 0.02) {
