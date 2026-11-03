@@ -44,6 +44,7 @@ export function save(world, settings) {
     awayHerons: world.awayHerons || [],
     nextSchoolId: world.nextSchoolId,
     nextAnimalId: world.nextAnimalId,
+    epochMs: world.epochMs,
     fields,
   };
   try {
@@ -81,6 +82,8 @@ export function load() {
     w.burning = d.burning || [];
     w.monitor = { ...w.monitor, ...d.monitor };
     w.climate.load(d.climate);
+    w.epochMs = d.epochMs ?? (d.savedAt - d.minute * 60000);
+    w.climate.epochMs = w.epochMs;
     w.log.load(d.log);
     if (d.animals) { loadAnimals(w, d.animals); w.nextAnimalId = d.nextAnimalId || 1; }
     else seedAnimals(w); // saves from before animals existed

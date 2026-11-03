@@ -72,6 +72,14 @@ export function startle(w, s, fromX, fromY, caught) {
 }
 
 function moveSchool(w, s, tx, ty, speed) {
+  // A minute of swimming in short steps.
+  for (let left = speed; left > 0.01; left -= 0.7) {
+    if (stepSchool(w, s, tx, ty, Math.min(0.7, left))) return true;
+  }
+  return false;
+}
+
+function stepSchool(w, s, tx, ty, speed) {
   const dx = tx - s.x, dy = ty - s.y, dist = Math.hypot(dx, dy);
   if (dist < 0.3) return true;
   const here = cellOf(s.x, s.y);
@@ -147,7 +155,7 @@ export function tickSchools(w) {
     // Cold water makes fish slow and dozy.
     const cold = w.climate.temp - (w.terrain[here] - 8) * 0.16 < 4 ? 0.5 : 1;
 
-    let speed = 0.9;
+    let speed = 5;
     if (s.fear > 0.35) {
       // Flee away from the threat, toward cover.
       s.mode = 'flee';
@@ -155,7 +163,7 @@ export function tickSchools(w) {
       const hide = bestSpot(w, s, 5, true);
       if (hide >= 0 && w.rng.chance(0.5)) { s.tx = hide % N; s.ty = (hide / N) | 0; }
       else { s.tx = s.x + dx / len * 5; s.ty = s.y + dy / len * 5; }
-      speed = 1.8;
+      speed = 12;
     } else if (spawnRun && s.migrant) {
       // Run upstream toward the springs to spawn.
       s.mode = 'migrate';
@@ -165,7 +173,7 @@ export function tickSchools(w) {
         if (d < bd) { bd = d; src = sp; }
       }
       s.tx = src.i % N; s.ty = (src.i / N) | 0;
-      speed = 1.1;
+      speed = 6;
     } else if (night || w.ice[here]) {
       // Rest somewhere covered.
       if (s.mode !== 'rest' || w.rng.chance(0.01)) {
@@ -173,14 +181,14 @@ export function tickSchools(w) {
         if (hide >= 0) { s.tx = hide % N; s.ty = (hide / N) | 0; }
       }
       s.mode = 'rest';
-      speed = 0.4;
+      speed = 1.5;
     } else {
       s.mode = 'feed';
       if (Math.hypot(s.tx - s.x, s.ty - s.y) < 0.5 || w.rng.chance(0.02)) {
         const spot = bestSpot(w, s, 6, false);
         if (spot >= 0) { s.tx = spot % N; s.ty = (spot / N) | 0; }
       }
-      speed = 0.6;
+      speed = 3;
     }
     moveSchool(w, s, s.tx, s.ty, speed * cold);
   }

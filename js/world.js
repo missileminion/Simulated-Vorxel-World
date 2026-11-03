@@ -4,7 +4,7 @@
 import { N, MIN_PER_DAY, DAYS_PER_YEAR, SEASON_NAMES } from './config.js';
 import { Rng } from './rng.js';
 import { generateTerrain, placeName } from './terrain.js';
-import { Climate, calendar, MOON_DAYS } from './climate.js';
+import { Climate, calendar, moonCycle } from './climate.js';
 import { stepWater, stepSources, dailyMoistureSpread, buildWarmMap, initialGroundwater } from './hydrology.js';
 import { seedInitialVegetation, dailyVegetation, hourlyFire, tryLightning, TREE } from './vegetation.js';
 import { seedSchools, tickSchools, dailySchools, rebuildFishMap, fishTotal } from './fish.js';
@@ -50,8 +50,12 @@ export class World {
     this.revision = 0;              // bumps when something visible changed a lot
   }
 
-  static create(seed) {
+  static create(seed, opts = {}) {
     const w = new World(seed);
+    // Start at the real local time of day, so the valley's day matches yours.
+    if (opts.minuteOfDay != null) w.minute = opts.minuteOfDay;
+    w.epochMs = opts.epochMs ?? Date.now() - w.minute * 60000;
+    w.climate.epochMs = w.epochMs;
     generateTerrain(w);
     w.prepare();
     w.warmup();
@@ -125,7 +129,7 @@ export class World {
     // Note a full moon rising, once per cycle.
     const c = this.climate;
     if (c.moonIllum > 0.97 && c.moonElev > 0 && c.moonElev < 0.3 && c.elev < 0) {
-      const cycle = Math.floor(this.minute / (MOON_DAYS * MIN_PER_DAY));
+      const cycle = Math.floor(moonCycle(this.minute, this.epochMs));
       if (this.monitor.fullMoon !== cycle) {
         this.monitor.fullMoon = cycle;
         this.log.add(this.minute, c.cloud > 0.6 ? 'A full moon rises behind the clouds.' : 'A full moon rises over the valley.', 'season');

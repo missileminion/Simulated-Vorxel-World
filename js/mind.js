@@ -405,7 +405,7 @@ export function think(w, a, topic, ctx = {}, importance = 1) {
   if (!m) return;
   const rng = w.rng;
   if (importance < 2) {
-    if (w.minute - m.last < 25 + rng.int(35)) return;
+    if (w.minute - m.last < 40 + rng.int(60)) return;
     if (!rng.chance(importance >= 1 ? 0.7 : 0.35)) return;
   } else if (w.minute - m.last < 3) return;
 
@@ -482,7 +482,7 @@ export function think(w, a, topic, ctx = {}, importance = 1) {
 // Something to think about when nothing in particular is happening.
 export function idleThought(w, a) {
   const m = a.mind, c = w.climate, rng = w.rng;
-  m.nextIdle = w.minute + 90 + rng.int(200);
+  m.nextIdle = w.minute + 150 + rng.int(300);
   const opts = [];
   if (a.hunger > 0.6) opts.push(['hungry', {}]);
   if (a.energy < 0.25) opts.push(['tired', {}]);

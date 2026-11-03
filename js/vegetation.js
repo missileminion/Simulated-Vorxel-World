@@ -147,8 +147,8 @@ function fuel(w, i) {
 export function tryLightning(w, rng) {
   const c = w.climate;
   let strikes = 0;
-  if (c.weather === 'storm') strikes = 3;
-  else if (c.precip === 0 && c.temp > 22 && rng.chance(0.03)) strikes = 2;
+  if (c.weather === 'storm' && rng.chance(0.4)) strikes = 1;
+  else if (c.precip === 0 && c.temp > 22 && rng.chance(0.008)) strikes = 1;
   for (let k = 0; k < strikes; k++) {
     const i = rng.int(N * N);
     if (w.water[i] > 0.01 || w.snow[i] > 0.01) continue;

@@ -121,7 +121,11 @@ export function stepSources(w) {
         const inf = Math.min(wi, INFILTRATION * PERM[material[i]], room);
         wi -= inf; moist[i] += inf / SOIL_CAP;
       }
-      if (wi > 0.02) moist[i] = 1;
+      // Standing water keeps the soil under it wet, but only by giving up some of itself.
+      if (wi > 0.02 && moist[i] < 1) {
+        const take = Math.min(wi - 0.02, (1 - moist[i]) * SOIL_CAP);
+        wi -= take; moist[i] += take / SOIL_CAP;
+      }
       const e = EVAP_WATER * clamp((temp + 2) / 24, 0, 1.4) * sunF * (ice[i] ? 0.1 : 1);
       wi = wi > e ? wi - e : 0;
       if (wi < 2e-4) { t[i] += sed[i]; sed[i] = 0; wi = 0; }

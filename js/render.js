@@ -126,7 +126,7 @@ export class Renderer {
   advanceBuild(budgetMs) {
     const now = performance.now();
     if (!this.job) {
-      if (now - this.lastBuildDone < 1200) return;
+      if (now - this.lastBuildDone < (this.rebuildMs || 1200)) return;
       this.job = this.buildJob(this.back);
     }
     const end = now + budgetMs;
@@ -685,11 +685,11 @@ export class Renderer {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     this.drawPrecip(ctx, dt, c, W, H);
     this.drawFog(ctx, c, W, H);
-    if (c.weather === 'storm' && Math.random() < dt * 0.05) this.flash = 1;
+    if (c.weather === 'storm' && Math.random() < dt * 0.015) this.flash = 1;
     if (this.flash > 0) {
-      ctx.fillStyle = `rgba(235,240,255,${this.flash * 0.18})`;
+      ctx.fillStyle = `rgba(235,240,255,${this.flash * 0.07})`;
       ctx.fillRect(0, 0, W, H);
-      this.flash = Math.max(0, this.flash - dt * 3);
+      this.flash = Math.max(0, this.flash - dt * 1.5);
     }
 
     drawBubbles(this, ctx);
@@ -748,7 +748,7 @@ export class Renderer {
     const day = Math.max(clamp(c.sun * 2 + 0.15, 0.15, 1), c.moonLight * 0.7);
     // Sun glints
     if (b.water.length) {
-      let n = dt * 30 * day * (1 - c.cloud * 0.7);
+      let n = dt * 12 * day * (1 - c.cloud * 0.7);
       while (n > 0) {
         if (Math.random() < n) {
           const k = b.water[(Math.random() * b.water.length) | 0];
@@ -759,7 +759,7 @@ export class Renderer {
     }
     // Current streaks along flowing water
     if (b.flowing.length) {
-      let n = dt * 26;
+      let n = dt * 8;
       while (n > 0) {
         if (Math.random() < n) {
           const k = b.flowing[(Math.random() * b.flowing.length) | 0];
@@ -767,13 +767,13 @@ export class Renderer {
           const len = Math.hypot(di, dj) || 1;
           const vx = (di - dj) / len * HW, vy = (di + dj) / len * HH;
           const [x, y] = this.surfacePoint(k, 0.5);
-          P.streak.push({ x, y, vx: vx * 0.9, vy: vy * 0.9, t: 0, life: 1 + Math.random() * 0.8 });
+          P.streak.push({ x, y, vx: vx * 0.45, vy: vy * 0.45, t: 0, life: 1.8 + Math.random() * 1.2 });
         }
         n -= 1;
       }
     }
     // Fish jumping
-    if (b.fishy.length && Math.random() < dt * 0.5) {
+    if (b.fishy.length && Math.random() < dt * 0.12) {
       const k = b.fishy[(Math.random() * b.fishy.length) | 0];
       const [x, y] = this.surfacePoint(k, 0.4);
       P.jump.push({ x, y, d: Math.random() < 0.5 ? -1 : 1, t: 0, life: 0.8 });
@@ -781,7 +781,7 @@ export class Renderer {
     }
     // Rain rings
     if (c.precip > 0 && c.temp > 0.5 && b.water.length) {
-      let n = dt * (c.weather === 'storm' ? 60 : 22);
+      let n = dt * (c.weather === 'storm' ? 24 : 8);
       while (n > 0) {
         if (Math.random() < n) {
           const k = b.water[(Math.random() * b.water.length) | 0];
@@ -883,29 +883,29 @@ export class Renderer {
     const snowing = c.precip > 0 && c.temp < 0.5;
     const raining = c.precip > 0 && !snowing;
     const dpr = this.dpr;
-    const wantDrops = raining ? (c.weather === 'storm' ? 420 : 160) : 0;
+    const wantDrops = raining ? (c.weather === 'storm' ? 200 : 80) : 0;
     while (this.drops.length < wantDrops) this.drops.push({ x: Math.random() * W, y: Math.random() * H, v: 0.8 + Math.random() * 0.4 });
     if (this.drops.length > wantDrops) this.drops.length = Math.max(0, this.drops.length - Math.ceil(dt * 200));
     if (this.drops.length) {
       const wx = c.windX * 0.25;
-      ctx.strokeStyle = 'rgba(210,222,232,0.35)';
+      ctx.strokeStyle = 'rgba(210,222,232,0.22)';
       ctx.lineWidth = 1 * dpr;
       ctx.beginPath();
       for (const d of this.drops) {
-        d.y += 900 * d.v * dt * dpr; d.x += 900 * wx * d.v * dt * dpr;
+        d.y += 620 * d.v * dt * dpr; d.x += 620 * wx * d.v * dt * dpr;
         if (d.y > H) { d.y -= H + 20; d.x = Math.random() * W; }
         if (d.x > W) d.x -= W; if (d.x < 0) d.x += W;
         ctx.moveTo(d.x, d.y); ctx.lineTo(d.x - wx * 14 * dpr, d.y - 14 * dpr);
       }
       ctx.stroke();
     }
-    const wantFlakes = snowing ? (c.weather === 'storm' ? 380 : 200) : 0;
+    const wantFlakes = snowing ? (c.weather === 'storm' ? 200 : 110) : 0;
     while (this.flakes.length < wantFlakes) this.flakes.push({ x: Math.random() * W, y: Math.random() * H, v: 0.5 + Math.random(), p: Math.random() * 6 });
     if (this.flakes.length > wantFlakes) this.flakes.length = Math.max(0, this.flakes.length - Math.ceil(dt * 100));
     if (this.flakes.length) {
       ctx.fillStyle = 'rgba(250,252,255,0.85)';
       for (const f of this.flakes) {
-        f.y += 40 * f.v * dt * dpr;
+        f.y += 26 * f.v * dt * dpr;
         f.x += (Math.sin(this.time + f.p) * 12 + c.windX * 30) * dt * dpr;
         if (f.y > H) { f.y = -5; f.x = Math.random() * W; }
         if (f.x > W) f.x -= W; if (f.x < 0) f.x += W;

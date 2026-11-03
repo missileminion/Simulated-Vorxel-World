@@ -25,11 +25,11 @@ Zoomed out you see the whole valley from a cached image. Zoom in and the part in
 | Click a block | Inspect it (water, soil, plants, fish) |
 | Q / E | Rotate |
 | Space | Pause |
-| S | Speed (1×, 5×, 30×, 150×) |
+| S | Speed (live, 10×, 60×, 240×) |
 | H | History of the valley |
 | 0 | Reset the view |
 
-The valley is 160×160 blocks. At 1× a valley day lasts 12 minutes and a year (four 7-day seasons) about 5.5 hours. The world is saved in your browser. When you come back it catches up on the time you were away (exact for the first three valley days, approximated after that, up to two years) and tells you what happened.
+The valley is 160×160 blocks and runs in real time: one valley minute is one real minute, and the clock follows your local time of day, so it is night in the valley when it is night for you. Seasons are squeezed to one per real week (a 28-day year) so you can watch them turn. The world is saved in your browser. When you come back it catches up on the time you were away (exact for the first three days, approximated after that, up to a valley year) and tells you what happened.
 
 `?fresh` starts a new valley, `?seed=123` picks a specific one.
 
@@ -37,7 +37,7 @@ The valley is 160×160 blocks. At 1× a valley day lasts 12 minutes and a year (
 
 - **Water:** river inflow from a hidden mountain catchment (rain and snowmelt feed groundwater, which releases slowly), rain and snow on the map, flow over terrain, soaking into soil, evaporation, ice, floods and droughts.
 - **Erosion:** stream power moves sediment very slowly; beds armour as they deepen. Ordinary flow changes almost nothing, floods do most of the work, the lake slowly silts up.
-- **Moon:** phases about every 2.4 valley days (the calendar is squeezed about 13x), rising and setting like the real one. Bright nights light the valley; prey hide and watch harder, foxes hunt better, herons fish; on dark nights fish are easier to sneak up on.
+- **Moon:** the real moon's phase for the real date, rising and setting through the night. Bright nights light the valley; prey hide and watch harder, foxes hunt better, herons fish; on dark nights fish are easier to sneak up on.
 - **Climate:** day/night with seasonal day length, temperature with altitude, hourly weather from seasonal odds, wind, and years that drift wetter/drier and warmer/colder.
 - **Plants:** grass, reeds, berry shrubs, broadleaf trees and pines. They grow by water, warmth, light and soil fertility, seed nearby, drown in floods, die of drought or age, stand as dead trees and rot back into soil.
 - **Fire:** lightning from storms and dry summer thunderheads, spreading with fuel, dryness and wind.
@@ -45,7 +45,7 @@ The valley is 160×160 blocks. At 1× a valley day lasts 12 minutes and a year (
 
 - **Fish:** schools that feed, flee and scatter, hide in reeds and deep water, avoid spots where they were attacked, grow warier with each attack, go sluggish in cold water, run upstream to spawn and split or merge. Newcomers swim down from upstream.
 - **Minds:** every animal has moods that rise and fade over time (happy, bored, frustrated, confident, grieving), beliefs kept as counts of good and bad outcomes ("foxes are dangerous: prob'ly"), its own nicknames for other species and names for places it remembers ("tickly wet", "fox corner"). Short thoughts in each species' voice come from what it actually feels, believes and does, and avoid repeating recent wording.
-- **Saving energy:** when fed and safe, animals lie low instead of wandering; they shelter from rain, storms and midday heat. Hunger overrides it all. Wasted energy counts as a small cost in what they learn.
+- **Calm by nature:** animals move at real walking speeds in short trips and spend most of their time grazing, fishing or lying low together. When fed and safe they rest instead of wandering; they shelter from rain, storms and midday heat. Hunger overrides it all. Wasted energy counts as a small cost in what they learn.
 - **Risk and fights:** a fox estimates its chance of a catch against its chance of getting kicked (more guardians, more risk; more hunger, more daring). Prey kick back, parents defend their young, herds raise the alarm together. Wounds slow animals down and heal over time.
 - **Animals:** otters, deer, hares, foxes and herons, each one an individual with a name, needs (hunger, energy, company, play, fear), an inherited personality (bold/shy, sociable/loner, curious/cautious, lazy/energetic), a memory of good and dangerous places, and a food-finding skill.
   - **Deciding:** every choice mixes instinct (needs weighted by personality) with a learned table of which choices paid off in which situations. Meeting needs is the reward; hunger, fear and pain are the punishment. Young animals explore more and learn faster; old ones are set in their ways.

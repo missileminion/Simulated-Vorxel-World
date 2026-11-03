@@ -54,13 +54,18 @@ export function sunElevation(cal) {
   return -Math.sin(Math.PI * t / nightLen) * 0.6;
 }
 
-// The moon goes round about every 2.4 valley days: the calendar is squeezed
-// about 13 times, so a real month becomes a couple of days and every night differs.
-export const MOON_DAYS = 2.4;
+// The real moon: its phase comes from the real date the valley minute stands for.
+export const MOON_DAYS = 29.530588;
+const NEW_MOON_REF = Date.UTC(2000, 0, 6, 18, 14);         // a known new moon
 
-export function moonState(minute) {
-  const days = minute / MIN_PER_DAY;
-  const phase = ((days / MOON_DAYS) + 0.15) % 1;          // 0 new, 0.5 full
+export function moonCycle(minute, epochMs) {
+  const realMs = (epochMs ?? Date.now() - minute * 60000) + minute * 60000;
+  return (realMs - NEW_MOON_REF) / 86400000 / MOON_DAYS;
+}
+
+export function moonState(minute, epochMs) {
+  const c = moonCycle(minute, epochMs);
+  const phase = ((c % 1) + 1) % 1;                          // 0 new, 0.5 full
   const illum = (1 - Math.cos(2 * Math.PI * phase)) / 2;
   // A full moon rises at sunset, a new moon at sunrise.
   const hour = (minute % MIN_PER_DAY) / 60;
@@ -110,7 +115,7 @@ export class Climate {
     this.fog += (fogTarget - this.fog) * 0.01;
     this.elev = sunElevation(cal);
     this.sun = Math.max(0, this.elev) * (1 - 0.65 * this.cloud);
-    const moon = moonState(minute);
+    const moon = moonState(minute, this.epochMs);
     this.moonPhase = moon.phase; this.moonIllum = moon.illum; this.moonElev = moon.elev;
     // How much moonlight reaches the ground (0 dark .. 1 bright full moon, clear sky, night).
     const night = clamp((-this.elev - 0.02) * 8, 0, 1);

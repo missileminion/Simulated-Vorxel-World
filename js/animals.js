@@ -243,7 +243,7 @@ function remember(w, a, i, kind, v) {
 function recalledFood(w, a) {
   let best = -1, bestV = 0;
   for (const m of a.memory) {
-    if (m.kind !== 'food') continue;
+    if (m.kind !== 'food' || m.v < 0.1) continue;
     const age = (w.minute - m.t) / MEMORY_MIN;
     const d = Math.hypot((m.i % N) - a.x, ((m.i / N) | 0) - a.y);
     const v = m.v * (1 - age) - d * 0.008;
@@ -271,7 +271,7 @@ function sleepinessNow(w, a, S) {
 }
 
 // How much each species likes to lie low when nothing needs doing.
-const IDLE = { otter: 0.18, deer: 0.42, rabbit: 0.32, fox: 0.4, heron: 0.3 };
+const IDLE = { otter: 0.35, deer: 0.6, rabbit: 0.5, fox: 0.6, heron: 0.55 };
 
 function instincts(w, a, S, sleepy, young) {
   const t = a.traits, m = a.mind, c = w.climate;
@@ -344,7 +344,7 @@ function decide(w, a) {
 function chooseHunt(w, a, S) {
   const cands = nearby(w, a, S.sense * 0.8, b => (b.sp === 'rabbit' && b.pose !== 'sleep' && b.pose !== 'rest')
     || ((b.sp === 'deer' || b.sp === 'otter') && !isAdult(w, b) && ageYears(w, b) < 0.5));
-  let best = null, bestEV = 0.04, tempting = null;
+  let best = null, bestEV = 0.08, tempting = null;
   const desperate = clamp((a.hunger - 0.7) * 2.5, 0, 0.9);
   for (const [b, d] of cands) {
     const sp = b.sp;
@@ -405,7 +405,21 @@ function startAction(w, a, act, foodNear) {
     if (foodScore(w, a, here) > 0.25) setTarget(here);
     else if (S.fly && foodNear >= 0) flyTo(foodNear);
     else if (foodNear >= 0) setTarget(foodNear);
-    else { const m = recalledFood(w, a); if (m >= 0) setTarget(m); else wanderTarget(w, a, 14); }
+    else {
+      const m = recalledFood(w, a);
+      if (m >= 0) setTarget(m);
+      else if (S.diet === 'fish' && w.wetList && w.wetList.length) {
+        // Nothing known nearby: travel to big open water, where fish winter.
+        let best = -1, bv = -Infinity;
+        for (let k = 0; k < 40; k++) {
+          const i = w.wetList[rng.int(w.wetList.length)];
+          if (w.ice[i] && rng.chance(0.7)) continue;
+          const v = Math.min(w.water[i], 2.5) + w.fish[i] * 2 - Math.hypot((i % N) - a.x, ((i / N) | 0) - a.y) * 0.02;
+          if (v > bv) { bv = v; best = i; }
+        }
+        if (best >= 0) setTarget(best); else wanderTarget(w, a, 14);
+      } else wanderTarget(w, a, 14);
+    }
   } else if (act === A.REST) {
     const dHome = Math.hypot((a.home % N) - a.x, ((a.home / N) | 0) - a.y);
     if (dHome < 25 && goodBed(w, a, a.home) && reachable(w, a, a.home % N, (a.home / N) | 0)) setTarget(a.home);
@@ -495,20 +509,36 @@ function wanderTarget(w, a, r) {
 
 // ---------- each minute ----------
 
+// One minute of travel, taken as several short steps so water and cliffs are respected.
 function moveToward(w, a, S, tx, ty, speedMul = 1) {
+  if (Math.hypot(tx - a.x, ty - a.y) < 0.3) return true;
+  const here0 = cellOf(a.x, a.y);
+  const inWater0 = w.water[here0] > 0.25;
+  let sp = (inWater0 ? S.swimSpeed : S.speed) * speedMul;
+  if (a.flying) sp = S.runSpeed;
+  if (w.snow[here0] > 0.03 && !inWater0 && !a.flying) sp *= 0.75;
+  sp *= (0.9 + a.energy * 0.2) * (0.45 + 0.55 * a.health);
+  let left = sp, arrived = false;
+  while (left > 0.01 && !arrived) {
+    const step = Math.min(0.7, left);
+    left -= step;
+    const r = stepToward(w, a, S, tx, ty, step);
+    if (r === 'arrived') arrived = true;
+    else if (r === 'stuck') break;
+  }
+  a.energy -= S.tire * (speedMul > 1.2 ? 1.5 : 0.4);
+  return arrived || Math.hypot(tx - a.x, ty - a.y) < 0.4;
+}
+
+function stepToward(w, a, S, tx, ty, maxStep) {
   const dx = tx - a.x, dy = ty - a.y;
   const dist = Math.hypot(dx, dy);
-  if (dist < 0.3) return true;
+  if (dist < 0.3) return 'arrived';
   const here = cellOf(a.x, a.y);
-  const inWater = w.water[here] > 0.25;
   // Somewhere it shouldn't be (deep water, fire): any way out will do.
   const trapped = !a.flying && ((!S.swim && w.water[here] > S.wade) || w.fire[here] > 0);
   if (trapped && S.fly) a.flying = 1;
-  let sp = (inWater ? S.swimSpeed : S.speed) * speedMul;
-  if (a.flying) sp = S.runSpeed;
-  if (w.snow[here] > 0.03 && !inWater && !a.flying) sp *= 0.75;
-  sp *= (0.9 + a.energy * 0.2) * (0.45 + 0.55 * a.health);
-  const step = Math.min(sp, dist);
+  const step = Math.min(maxStep, dist);
   // Pick the passable direction that best heads toward the target.
   let bx = 0, by = 0, best = -Infinity;
   for (const [ox, oy] of DIRS) {
@@ -521,7 +551,7 @@ function moveToward(w, a, S, tx, ty, speedMul = 1) {
     const score = (ox * dx + oy * dy) / (len * dist) - Math.abs(w.terrain[j] - w.terrain[here]) * 0.05 - wet + w.rng.next() * 0.15;
     if (score > best) { best = score; bx = ox / len; by = oy / len; }
   }
-  if (best === -Infinity || best < -0.2) { a.stuck++; return false; }
+  if (best === -Infinity || best < -0.2) { a.stuck++; return 'stuck'; }
   // Blend toward the direct line so paths look smooth.
   const ux = dx / dist, uy = dy / dist;
   let mx = bx * 0.7 + ux * 0.3, my = by * 0.7 + uy * 0.3;
@@ -533,8 +563,7 @@ function moveToward(w, a, S, tx, ty, speedMul = 1) {
   else { a.x = nx; a.y = ny; }
   a.x = clamp(a.x, 0, N - 1); a.y = clamp(a.y, 0, N - 1);
   a.heading = Math.atan2(my, mx);
-  a.energy -= S.tire * (speedMul > 1.2 ? 1.5 : 0.4);
-  return Math.hypot(tx - a.x, ty - a.y) < 0.4;
+  return Math.hypot(tx - a.x, ty - a.y) < 0.4 ? 'arrived' : 'moved';
 }
 
 function senseThreats(w, a, S) {
@@ -572,8 +601,8 @@ function senseThreats(w, a, S) {
     think(w, a, fire ? 'fire' : 'scared', { pred: threat ? nick(a, threat.sp) : 'something' }, 2);
     // Herd and family pick up the alarm.
     if (a.sp === 'deer' || a.sp === 'rabbit' || a.sp === 'otter') {
-      for (const [b] of nearby(w, a, 6, b => b.sp === a.sp && b.fear < fear * 0.6)) {
-        b.fear = Math.max(b.fear, fear * 0.65); b.threatX = a.threatX; b.threatY = a.threatY;
+      for (const [b] of nearby(w, a, 4, b => b.sp === a.sp && b.fear < fear * 0.6)) {
+        b.fear = Math.max(b.fear, fear * 0.5); b.threatX = a.threatX; b.threatY = a.threatY;
         think(w, b, 'alarm', { kin: a.name }, 1);
       }
     }
@@ -590,7 +619,7 @@ function senseThreats(w, a, S) {
     const kids = nearby(w, threat, 5, k => k.sp === a.sp && !isAdult(w, k));
     if (kids.length) {
       const own = kids.find(([k]) => k.mother === a.id);
-      const urge = (own ? 0.5 : a.sp === 'deer' ? 0.15 : 0) + 0.35 * a.traits.bold + 0.3 * a.mind.confident - 0.3 * (1 - a.health);
+      const urge = ((own ? 0.5 : a.sp === 'deer' ? 0.1 : 0) + 0.35 * a.traits.bold + 0.3 * a.mind.confident - 0.3 * (1 - a.health)) * 0.7;
       if (w.rng.chance(clamp(urge, 0, 0.95))) {
         a.defend = threat.id; a.defendT = 25;
         think(w, a, 'defend', { pred: nick(a, threat.sp), kin: (own || kids[0])[0].name }, 2);
@@ -662,9 +691,16 @@ function act(w, a, S) {
           if (a.sp === 'deer' && w.tree[i] && w.tree[i] < 4 && w.treeSize[i] < 0.25) { w.treeSize[i] -= 0.004; a.hunger -= 0.003; }
           else if (a.sp === 'deer' && w.tree[i] >= 1 && w.tree[i] <= 3 && w.snow[i] > 0.02) { a.hunger -= 0.0035; w.treeHealth[i] -= 0.0004; }
           if (a.timer % 30 === 5) think(w, a, 'eat', {}, 0.5);
-          if (foodScore(w, a, i) < 0.15) a.done = true;
+          if (foodScore(w, a, i) < 0.15) {
+            for (const m of a.memory) if (m.kind === 'food' && m.i === i) m.v = Math.min(m.v, foodScore(w, a, i));
+            a.done = true;
+          }
         } else if (S.diet === 'fish' || S.diet === 'wade') {
-          if (foodScore(w, a, i) < 0.04) { a.done = true; break; }
+          if (foodScore(w, a, i) < 0.04) {
+            // Nothing here any more: forget it as a food spot so it isn't chosen again.
+            for (const m of a.memory) if (m.kind === 'food' && Math.abs((m.i % N) - (i % N)) + Math.abs(((m.i / N) | 0) - ((i / N) | 0)) < 4) m.v = 0;
+            a.done = true; break;
+          }
           a.pose = S.diet === 'fish' ? 'dive' : 'stalk';
           if (a.timer % 4 === 0) {
             const food = S.diet === 'wade' ? shallowLife(w, i) : (w.fish[i] * 0.5 + bottomLife(w, i) * 2) * (w.ice[i] ? 0.4 : 1);
@@ -810,7 +846,7 @@ function fishSchool(w, a, S) {
   if (d > S.sense * 2 || a.timer > 150) { a.done = true; learn(a, 'fishing', false); return; }
   moveToward(w, a, S, s.x, s.y, d < 3 ? 1.4 : 1);
   a.pose = d < 1.5 ? 'dive' : 'swim';
-  if (d < 1.2 && a.timer % 3 === 0) {
+  if (d < 1.2 && a.timer % 2 === 0) {
     const i = cellOf(s.x, s.y);
     const coverK = (1 - 0.4 * w.reed[i] - (w.water[i] > 2 ? 0.25 : 0) - (w.ice[i] ? 0.2 : 0)) * (w.climate.temp < 4 ? 1.3 : 1);
     // Up close, a quick otter still gets one now and then even from a jumpy school.
@@ -818,7 +854,7 @@ function fishSchool(w, a, S) {
     if (w.rng.chance(chance)) {
       startle(w, s, a.x, a.y, true);
       learn(a, 'fishing', true);
-      gotFood(w, a, S, 0.24, nick(a, 'fish'));
+      gotFood(w, a, S, 0.3, nick(a, 'fish'));
       remember(w, a, i, 'food', 0.8);
       if (a.hunger < 0.25) a.done = true;
     } else {
@@ -897,9 +933,7 @@ function kill(w, a, cause, by) {
     w.deathsToday[a.sp] = w.deathsToday[a.sp] || {};
     w.deathsToday[a.sp][cause] = (w.deathsToday[a.sp][cause] || 0) + 1;
   }
-  if (cause === 'wounds' && by && SPECIES[by.sp].diet !== 'hunt' && a.sp === 'fox') {
-    w.log.add(w.minute, `A fox picked the wrong fight with a ${SPECIES[by.sp].label} and did not survive.`, 'life');
-  }
+
 }
 
 export function tickAnimals(w) {
@@ -941,7 +975,7 @@ export function tickAnimals(w) {
     if (a.defend >= 0 && doDefend(w, a, S)) { a.timer++; }
     else {
       const prevAction = a.action;
-      if (a.done || a.timer > 45 + w.rng.int(30) || (a.fear > 0.5 && a.action !== A.FLEE)) {
+      if (a.done || a.timer > 70 + w.rng.int(60) || (a.fear > 0.6 && a.action !== A.FLEE)) {
         a.done = false;
         decide(w, a);
       }
@@ -1055,10 +1089,7 @@ export function dailyAnimals(w, cal) {
     }
     if (n) w.log.add(w.minute, `${n} young ${n === 1 ? SPECIES[sp].label : SPECIES[sp].plural} born in the valley.`, 'life');
   }
-  for (const sp in w.deathsToday) {
-    const d = w.deathsToday[sp];
-    if (d.starved >= 2) w.log.add(w.minute, `Hunger takes ${d.starved} ${SPECIES[sp].plural}.`, 'life');
-  }
+
   w.birthsToday = {}; w.deathsToday = {};
 
   // Newcomers keep any species from vanishing for good.

@@ -331,22 +331,22 @@ export function drawSchools(r, ctx, alpha, time) {
     if (w.water[k] < 0.12 || (w.ice[k] && w.snow[k] > 0.005)) continue;
     const [di, dj] = r.toDisplay(x, y);
     const sx = r.originX + (di - dj) * 6, sy = r.originY + (di + dj) * 3 - r.front.surf[k] * 5;
-    const n = Math.min(14, Math.ceil(s.n / 10));
+    const n = Math.min(8, Math.ceil(s.n / 15));
     const spread = 1.2 + s.fear * 2.5 + Math.min(1.5, s.n / 100);
     const [hi, hj] = r.dir(Math.cos(s.heading), Math.sin(s.heading));
     const ang = Math.atan2((hi + hj) * 3, (hi - hj) * 6);
     const deep = clamp(w.water[k] / 2.5, 0, 1);
-    ctx.fillStyle = `rgba(36,52,62,${0.22 + 0.12 * (1 - deep)})`;
+    ctx.fillStyle = `rgba(36,52,62,${0.14 + 0.08 * (1 - deep)})`;
     for (let f = 0; f < n; f++) {
       const h1 = hash2(s.id, f, 1), h2 = hash2(s.id, f, 2);
-      const wob = Math.sin(time * (1.5 + h1) + f) * 0.4;
+      const wob = Math.sin(time * (0.5 + h1 * 0.5) + f) * 0.3;
       const ox = (h1 - 0.5) * spread * 2 + wob, oy = (h2 - 0.5) * spread;
       const len = Math.max(0.6, ppm > 6 ? 1.1 : 0.9);
       ctx.beginPath();
       ctx.ellipse(sx + ox, sy + oy, len, len * 0.32, ang, 0, Math.PI * 2);
       ctx.fill();
     }
-    if (ppm > 5 && Math.random() < 0.02 * n) {
+    if (ppm > 5 && Math.random() < 0.004 * n) {
       ctx.fillStyle = 'rgba(240,248,250,0.7)';
       ctx.fillRect(sx + (Math.random() - 0.5) * spread * 2, sy + (Math.random() - 0.5) * spread, 0.6, 0.3);
     }
@@ -442,8 +442,8 @@ export function drawBubbles(r, ctx) {
   const ppm = PPM * E * zCss;
   // Zoomed out: a couple of fresh thoughts at a time. Zoomed in: more, and longer-lived.
   const close = smoothstep(8, 12, ppm);
-  const maxBubbles = close > 0.5 ? 4 : 2;
-  const freshFor = close > 0.5 ? 45 : 25;
+  const maxBubbles = close > 0.5 ? 2 : 1;
+  const freshFor = close > 0.5 ? 30 : 15;
   const show = 1;
   const toScreen = (x, y) => [(x - view.cx) * view.z + view.W / 2, (y - view.cy) * view.z + view.H / 2];
   const now = w.minute;

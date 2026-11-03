@@ -104,7 +104,7 @@ function updateHud() {
   $('date').textContent = `${SEASON_NAMES[c.season]} · day ${c.dayOfSeason + 1} · year ${c.year + 1}`;
   const moon = cl.elev < 0 && cl.moonElev > 0 ? ` · ${moonName(cl.moonPhase)}` : '';
   $('weather').textContent = `${cl.describe()} · ${Math.round(cl.temp)}°C${moon}`;
-  $('speed').textContent = `${SPEEDS[settings.speed]}×`;
+  $('speed').textContent = settings.speed ? `${SPEEDS[settings.speed]}×` : 'live';
   $('pop').textContent = SPECIES_KEYS.map(sp => {
     const n = world.animals.filter(a => a.sp === sp).length;
     if (sp === 'heron' && !n && world.awayHerons && world.awayHerons.length) return 'herons away south';
@@ -115,7 +115,7 @@ function updateHud() {
 function renderLog() {
   const box = $('log');
   box.innerHTML = '';
-  const items = world.log.items.slice(-4);
+  const items = world.log.items.slice(-2);
   items.forEach((e, n) => {
     const d = document.createElement('div');
     d.className = 'item' + (n < items.length - 2 ? ' old' : '');
@@ -363,7 +363,7 @@ function setupInput() {
     paused = !paused;
     $('pauseIcon').innerHTML = paused ? '<path d="M8 5l11 7-11 7z" />' : '<path d="M9 6v12M15 6v12" />';
   };
-  const cycleSpeed = () => { settings.speed = (settings.speed + 1) % SPEEDS.length; updateHud(); };
+  const cycleSpeed = () => { settings.speed = (settings.speed + 1) % SPEEDS.length; renderer.rebuildMs = Math.max(1200, 30000 / SPEEDS[settings.speed]); updateHud(); };
   const toggleHistory = () => {
     const p = $('historyPanel');
     p.classList.toggle('hidden');
@@ -461,11 +461,13 @@ async function start() {
     overlay('Shaping a new valley…', 'Carving the river and filling the lake.', null);
     await nextFrame();
     const seed = params.get('seed') ? Number(params.get('seed')) : (Math.random() * 2 ** 32) >>> 0;
-    world = World.create(seed);
+    const now = new Date();
+    world = World.create(seed, { minuteOfDay: now.getHours() * 60 + now.getMinutes() });
     closeOverlay();
     if (params.has('fresh')) history.replaceState(null, '', location.pathname);
   }
   renderer = new Renderer($('view'), world);
+  renderer.rebuildMs = Math.max(1200, 30000 / SPEEDS[settings.speed || 0]);
   window.valley = { world, renderer }; // handy for poking around in the console
   if (settings.rot) renderer.setRotation(settings.rot);
   world.log.onAdd(() => renderLog());
