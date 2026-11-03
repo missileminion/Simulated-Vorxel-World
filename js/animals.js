@@ -410,11 +410,15 @@ function startAction(w, a, act, foodNear) {
       if (m >= 0) setTarget(m);
       else if (S.diet === 'fish' && w.wetList && w.wetList.length) {
         // Nothing known nearby: travel to big open water, where fish winter.
+        // Not the little source pools up on the ridge: the lake, the pond and the lower river.
         let best = -1, bv = -Infinity;
-        for (let k = 0; k < 40; k++) {
+        for (let k = 0; k < 50; k++) {
           const i = w.wetList[rng.int(w.wetList.length)];
           if (w.ice[i] && rng.chance(0.7)) continue;
-          const v = Math.min(w.water[i], 2.5) + w.fish[i] * 2 - Math.hypot((i % N) - a.x, ((i / N) | 0) - a.y) * 0.02;
+          if (w.terrain[i] > 22) continue;
+          const x = i % N, y = (i / N) | 0;
+          if (w.springs.some(sp => Math.hypot((sp.i % N) - x, ((sp.i / N) | 0) - y) < 12)) continue;
+          const v = Math.min(w.water[i], 2.5) + w.fish[i] * 3 - Math.hypot(x - a.x, y - a.y) * 0.015;
           if (v > bv) { bv = v; best = i; }
         }
         if (best >= 0) setTarget(best); else wanderTarget(w, a, 14);
@@ -463,7 +467,7 @@ function fleeTarget(w, a, S) {
 // A dry, safe place to sleep. Otters want a bank next to water; others like cover.
 function goodBed(w, a, i) {
   if (w.fire[i] > 0) return false;
-  if (a.sp === 'otter') return w.water[i] < 0.3 && nearWater(w, i, 2);
+  if (a.sp === 'otter') return w.water[i] < 0.3 && nearWater(w, i, 2) && w.terrain[i] < 24;
   return w.water[i] < 0.03;
 }
 // Can it walk there in a straight line without crossing water it can't wade?
