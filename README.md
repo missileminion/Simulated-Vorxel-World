@@ -1,6 +1,6 @@
 # Quiet Valley
 
-A small voxel valley that lives on its own. Leave it open while you study and glance over now and then: the river rises and falls, seasons turn, forests spread and burn, otters fish and raise pups, foxes hunt hares, deer graze, herons stalk the shallows. Nothing is scripted; everything follows from water, weather, soil and what each animal needs and has learned.
+A small voxel valley that lives on its own. Leave it open while you study and glance over now and then: the river rises and falls, seasons turn, forests spread and burn, otters chase fish schools and raise pups, foxes hunt hares (when it's worth the risk), deer graze and defend their fawns, herons stalk the shallows and fly south for the winter. Zoom in and you can read what they're thinking. Nothing is scripted; everything follows from water, weather, soil and what each animal needs and has learned.
 
 ## Run it
 
@@ -25,7 +25,7 @@ Then open http://localhost:8000. GitHub Pages serves it as is.
 | H | History of the valley |
 | 0 | Reset the view |
 
-At 1× a valley day lasts 12 minutes and a year (four 7-day seasons) about 5.5 hours. The world is saved in your browser. When you come back it catches up on the time you were away (exact for the first week, approximated after that, up to two years) and tells you what happened.
+The valley is 160×160 blocks. At 1× a valley day lasts 12 minutes and a year (four 7-day seasons) about 5.5 hours. The world is saved in your browser. When you come back it catches up on the time you were away (exact for the first three valley days, approximated after that, up to two years) and tells you what happened.
 
 `?fresh` starts a new valley, `?seed=123` picks a specific one.
 
@@ -38,6 +38,9 @@ At 1× a valley day lasts 12 minutes and a year (four 7-day seasons) about 5.5 h
 - **Fire:** lightning from storms and dry summer thunderheads, spreading with fuel, dryness and wind.
 - **Fish:** a density per water cell that breeds in spring, moves to better habitat and dies when water dries, warms or freezes.
 
+- **Fish:** schools that feed, flee and scatter, hide in reeds and deep water, avoid spots where they were attacked, grow warier with each attack, go sluggish in cold water, run upstream to spawn and split or merge. Newcomers swim down from upstream.
+- **Minds:** every animal has moods that rise and fade over time (happy, bored, frustrated, confident, grieving), beliefs kept as counts of good and bad outcomes ("foxes are dangerous: prob'ly"), its own nicknames for other species and names for places it remembers ("tickly wet", "fox corner"). Short thoughts in each species' voice come from what it actually feels, believes and does, and avoid repeating recent wording.
+- **Risk and fights:** a fox estimates its chance of a catch against its chance of getting kicked (more guardians, more risk; more hunger, more daring). Prey kick back, parents defend their young, herds raise the alarm together. Wounds slow animals down and heal over time.
 - **Animals:** otters, deer, hares, foxes and herons, each one an individual with a name, needs (hunger, energy, company, play, fear), an inherited personality (bold/shy, sociable/loner, curious/cautious, lazy/energetic), a memory of good and dangerous places, and a food-finding skill.
   - **Deciding:** every choice mixes instinct (needs weighted by personality) with a learned table of which choices paid off in which situations. Meeting needs is the reward; hunger, fear and pain are the punishment. Young animals explore more and learn faster; old ones are set in their ways.
   - **Learning from others:** pups inherit a little of their mother's habits, gain skill by watching adults catch fish, and are fed by their mothers until they can fend for themselves.
@@ -48,7 +51,7 @@ At 1× a valley day lasts 12 minutes and a year (four 7-day seasons) about 5.5 h
 
 - `index.html`, `style.css`: page and interface
 - `js/world.js`: state and clock; `terrain.js`, `climate.js`, `hydrology.js`, `vegetation.js`, `fish.js`: the systems
-- `js/species.js`, `js/animals.js`: animal traits, needs, decisions, learning, births and deaths; `js/creatures.js`: drawing them
+- `js/species.js`, `js/animals.js`: animal traits, needs, decisions, learning, fights, births and deaths; `js/mind.js`: moods, beliefs, names and thoughts; `js/fish.js`: fish schools; `js/creatures.js`: voxel models, fish shadows and thought bubbles
 - `js/render.js`, `js/palette.js`: isometric drawing, light and weather effects
 - `js/store.js`: saving; `js/main.js`: loop, catch-up and controls
 - `tools/headless.mjs`: runs the world without graphics for long stability checks (`node tools/headless.mjs 10`)
